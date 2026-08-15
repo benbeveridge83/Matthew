@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f4efe4" />
+  <meta name="description" content="Select sentences from Matthew, create named passage groups, and classify those groups in a flexible category matrix." />
+  <title>Matthew Verse Mapper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="#scripture" aria-label="Matthew Verse Mapper home">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span><strong>Matthew</strong><small>Verse Mapper</small></span>
+      </a>
+      <nav class="tabs" aria-label="Main views">
+        <button class="tab is-active" data-view="scripture" type="button">Scripture</button>
+        <button class="tab" data-view="matrix" type="button">Category Matrix <span id="group-count-badge" class="count-badge">0</span></button>
+      </nav>
+      <div class="header-actions">
+        <span id="sync-status" class="sync-status" data-state="local"><i></i><span>Local mode</span></span>
+        <button id="settings-button" class="icon-button" type="button" aria-label="Open settings" title="Settings">⚙</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="scripture-view" class="view is-active" aria-labelledby="scripture-title">
+        <div class="reading-toolbar">
+          <div>
+            <p class="eyebrow">The Gospel according to Matthew</p>
+            <h1 id="scripture-title">Read. Select. Map.</h1>
+            <p class="intro">Choose individual sentences, then save them together as a named passage group.</p>
+          </div>
+          <div class="chapter-tools">
+            <label for="chapter-select">Chapter</label>
+            <select id="chapter-select" aria-label="Select chapter"></select>
+            <button id="previous-chapter" class="square-button" type="button" aria-label="Previous chapter">←</button>
+            <button id="next-chapter" class="square-button" type="button" aria-label="Next chapter">→</button>
+          </div>
+        </div>
+        <div class="reader-layout">
+          <aside class="chapter-rail" aria-label="Matthew chapters">
+            <p>Chapters</p>
+            <div id="chapter-list" class="chapter-list"></div>
+          </aside>
+          <article class="scripture-panel">
+            <div class="chapter-heading">
+              <span>Matthew</span>
+              <strong id="chapter-number">1</strong>
+            </div>
+            <div id="sentence-list" class="sentence-list" aria-live="polite"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="matrix-view" class="view" aria-labelledby="matrix-title">
+        <div class="matrix-hero">
+          <div>
+            <p class="eyebrow">Your study structure</p>
+            <h1 id="matrix-title">Category Matrix</h1>
+            <p class="intro">Each passage group is a row. Add classification columns, then click cells to organize your groups.</p>
+          </div>
+          <button id="add-column-button" class="primary-button" type="button">＋ New category column</button>
+        </div>
+        <div id="matrix-empty" class="empty-state" hidden>
+          <span aria-hidden="true">✦</span>
+          <h2>No passage groups yet</h2>
+          <p>Select sentences in the Scripture tab and give the selection a name.</p>
+          <button class="secondary-button" data-go-scripture type="button">Choose sentences</button>
+        </div>
+        <div id="matrix-wrap" class="matrix-wrap">
+          <table class="matrix-table">
+            <thead><tr id="matrix-head-row"><th class="passage-column">Passage group</th></tr></thead>
+            <tbody id="matrix-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="selection-tray" class="selection-tray" aria-live="polite" hidden>
+    <div><strong id="selection-count">0 sentences selected</strong><span id="selection-reference">—</span></div>
+    <div class="selection-actions">
+      <button id="clear-selection" class="text-button" type="button">Clear</button>
+      <button id="create-group-button" class="primary-button" type="button">Create passage group</button>
+    </div>
+  </div>
+
+  <dialog id="group-dialog" class="app-dialog">
+    <form id="group-form" method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">New passage group</p>
+      <h2>Name this selection</h2>
+      <p id="group-dialog-reference" class="dialog-reference"></p>
+      <label for="group-name">Group name</label>
+      <input id="group-name" name="groupName" maxlength="100" required placeholder="e.g., Jesus begins his ministry" />
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel" type="button" data-close-dialog>Cancel</button>
+        <button class="primary-button" value="default" type="submit">Save group</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="column-dialog" class="app-dialog">
+    <form id="column-form" method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">New matrix column</p>
+      <h2>Add a category</h2>
+      <p class="dialog-copy">This becomes a new column. Click any cell beneath it to classify that passage group.</p>
+      <label for="column-name">Category name</label>
+      <input id="column-name" name="columnName" maxlength="80" required placeholder="e.g., Teaching, Miracle, Prophecy" />
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel" type="button" data-close-dialog>Cancel</button>
+        <button class="primary-button" value="default" type="submit">Add column</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="app-dialog settings-dialog">
+    <form id="settings-form" method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">Data connection</p>
+      <h2>Supabase settings</h2>
+      <p class="dialog-copy">Without Supabase, your work stays in this browser. Connect to save it securely under an anonymous Supabase account.</p>
+      <label for="supabase-url">Project URL</label>
+      <input id="supabase-url" type="url" autocomplete="off" placeholder="https://your-project.supabase.co" />
+      <label for="supabase-key">Publishable key</label>
+      <input id="supabase-key" type="password" autocomplete="off" placeholder="sb_publishable_…" />
+      <p class="privacy-note">Use only a publishable key—never a secret or service-role key.</p>
+      <div class="dialog-actions split-actions">
+        <button id="disconnect-button" class="text-button danger-text" value="cancel" type="button">Use local mode</button>
+        <span></span>
+        <button class="secondary-button" value="cancel" type="button" data-close-dialog>Cancel</button>
+        <button class="primary-button" value="default" type="submit">Connect</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.0.2 · 28 chapters · 1,067 supplied verses</span></footer>
+  <script src="config.js"></script>
+  <script src="data/matthew-data.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
