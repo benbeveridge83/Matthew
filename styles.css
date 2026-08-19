@@ -66,13 +66,20 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .chapter-heading span { text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-size: 12px; font-weight: 700; }
 .chapter-heading strong { font: 400 46px "Libre Caslon Text", serif; color: var(--accent); }
 .sentence-list { display: grid; gap: 8px; }
-.sentence-block { width: 100%; display: grid; grid-template-columns: 62px 1fr 22px; gap: 14px; align-items: start; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 11px; padding: 12px 13px; cursor: pointer; transition: background .15s, border-color .15s, transform .15s; }
+.sentence-block { width: 100%; display: grid; grid-template-columns: 62px 1fr 26px; gap: 14px; align-items: start; text-align: left; border: 2px solid transparent; background: transparent; border-radius: 11px; padding: 11px 12px; cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; }
 .sentence-block:hover { background: rgba(255,255,255,.72); border-color: var(--line); transform: translateX(2px); }
-.sentence-block.is-selected { background: var(--accent-soft); border-color: #d9a997; }
+.sentence-block.is-selected,
+.sentence-block.is-selected:hover {
+  background: #f0d3c7;
+  border-color: var(--accent);
+  box-shadow: inset 5px 0 0 var(--accent), 0 4px 14px rgba(125, 56, 40, .14);
+  transform: translateX(3px);
+}
+.sentence-block.is-selected .sentence-reference { color: var(--accent-dark); }
 .sentence-reference { color: var(--accent); font-size: 10px; font-weight: 700; padding-top: 5px; white-space: nowrap; }
 .sentence-text { font: 400 17px/1.72 "Libre Caslon Text", Georgia, serif; }
-.selection-check { width: 19px; height: 19px; border: 1px solid #b4a895; border-radius: 50%; display: grid; place-items: center; margin-top: 4px; color: transparent; font-size: 12px; }
-.sentence-block.is-selected .selection-check { color: white; border-color: var(--accent); background: var(--accent); }
+.selection-check { width: 24px; height: 24px; border: 2px solid #b4a895; border-radius: 50%; display: grid; place-items: center; margin-top: 2px; color: transparent; font-size: 15px; font-weight: 700; line-height: 1; transition: background .15s, border-color .15s, color .15s, transform .15s; }
+.sentence-block.is-selected .selection-check { color: white; border-color: var(--accent-dark); background: var(--accent); transform: scale(1.08); box-shadow: 0 2px 6px rgba(125, 56, 40, .25); }
 .selection-tray { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; width: min(780px, calc(100% - 30px)); min-height: 76px; padding: 13px 14px 13px 20px; border-radius: 16px; background: #292824; color: white; box-shadow: 0 20px 60px rgba(37,31,24,.32); display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .selection-tray[hidden] { display: none; }
 .selection-tray strong, .selection-tray span { display: block; }
@@ -152,7 +159,7 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .site-header { padding: 11px 16px; gap: 10px; }
   .view { padding: 38px 16px 120px; }
   h1 { font-size: 40px; }
-  .sentence-block { grid-template-columns: 46px 1fr 20px; gap: 9px; padding: 10px 8px; }
+  .sentence-block { grid-template-columns: 46px 1fr 24px; gap: 9px; padding: 9px 7px; }
   .sentence-text { font-size: 16px; line-height: 1.62; }
   .selection-tray { bottom: 10px; align-items: stretch; flex-direction: column; gap: 8px; }
   .selection-actions { justify-content: flex-end; }
