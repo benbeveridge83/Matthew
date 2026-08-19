@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const SUPABASE_MODULE = 'https://esm.sh/@supabase/supabase-js@2.102.0';
@@ -210,6 +210,7 @@ function renderChapter() {
       const check = document.createElement('span');
       check.className = 'selection-check';
       check.textContent = '✓';
+      check.setAttribute('aria-hidden', 'true');
       button.append(ref, text, check);
       els.sentenceList.append(button);
     });
