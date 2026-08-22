@@ -1,4 +1,4 @@
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
@@ -16,6 +16,9 @@ const state = {
   view: 'scripture',
   selected: new Set(),
   expanded: new Set(),
+  hiddenGroupIds: new Set(),
+  editingGroupId: null,
+  editingColumnId: null,
   groups: [],
   columns: [],
   cells: new Set(),
@@ -36,15 +39,19 @@ const els = {
   selectionTray: $('#selection-tray'), selectionCount: $('#selection-count'), selectionReference: $('#selection-reference'),
   clearSelection: $('#clear-selection'), createGroupButton: $('#create-group-button'), groupCountBadge: $('#group-count-badge'),
   matrixHeadRow: $('#matrix-head-row'), matrixBody: $('#matrix-body'), matrixWrap: $('#matrix-wrap'), matrixEmpty: $('#matrix-empty'),
+  matrixFilterEmpty: $('#matrix-filter-empty'), categoryFilter: $('#category-filter'), categoryFilterList: $('#category-filter-list'),
+  categoryFilterSummary: $('#category-filter-summary'), filterAll: $('#filter-all'), filterNone: $('#filter-none'),
   addColumnButton: $('#add-column-button'), groupDialog: $('#group-dialog'), groupForm: $('#group-form'), groupName: $('#group-name'),
   groupDialogReference: $('#group-dialog-reference'), columnDialog: $('#column-dialog'), columnForm: $('#column-form'),
-  columnName: $('#column-name'), settingsDialog: $('#settings-dialog'), settingsForm: $('#settings-form'),
+  columnName: $('#column-name'), columnDialogEyebrow: $('#column-dialog-eyebrow'), columnDialogTitle: $('#column-dialog-title'),
+  columnDialogCopy: $('#column-dialog-copy'), columnSubmitButton: $('#column-submit-button'),
+  settingsDialog: $('#settings-dialog'), settingsForm: $('#settings-form'),
   settingsButton: $('#settings-button'), supabaseUrl: $('#supabase-url'), supabaseKey: $('#supabase-key'),
   disconnectButton: $('#disconnect-button'), syncStatus: $('#sync-status'), toastRegion: $('#toast-region'),
   accountBadge: $('#account-badge'), accountStatus: $('#account-status'), anonymousAccountActions: $('#anonymous-account-actions'),
   accountEmail: $('#account-email'), accountHelp: $('#account-help'), upgradeAccountButton: $('#upgrade-account-button'),
   signinLinkButton: $('#signin-link-button'), signedInAccount: $('#signed-in-account'), signedInEmail: $('#signed-in-email'),
-  signoutButton: $('#signout-button'),
+  signoutButton: $('#signout-button'), selectionMode: $('#selection-mode'),
 };
 
 function localId() {
@@ -76,6 +83,27 @@ function selectedSentenceIds() {
   return [...state.selected].sort(compareSentenceIds);
 }
 
+function firstSentenceIndex(group) {
+  return Math.min(...(group.sentence_keys || []).map((id) => sentenceOrder.get(id) ?? Number.MAX_SAFE_INTEGER));
+}
+
+function compareGroupsByMatthewOrder(a, b) {
+  const firstDifference = firstSentenceIndex(a) - firstSentenceIndex(b);
+  if (firstDifference) return firstDifference;
+  const left = (a.sentence_keys || []).slice().sort(compareSentenceIds);
+  const right = (b.sentence_keys || []).slice().sort(compareSentenceIds);
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const difference = compareSentenceIds(left[index], right[index]);
+    if (difference) return difference;
+  }
+  if (left.length !== right.length) return left.length - right.length;
+  return String(a.name || '').localeCompare(String(b.name || ''));
+}
+
+function orderedGroups() {
+  return state.groups.slice().sort(compareGroupsByMatthewOrder);
+}
+
 function isAnonymousUser(user = state.user) {
   return Boolean(user?.is_anonymous);
 }
@@ -83,6 +111,7 @@ function isAnonymousUser(user = state.user) {
 function savedGroupsBySentence() {
   const map = new Map();
   state.groups.forEach((group) => {
+    if (String(group.id) === String(state.editingGroupId)) return;
     (group.sentence_keys || []).forEach((id) => {
       if (!map.has(id)) map.set(id, []);
       map.get(id).push(group);
@@ -275,6 +304,8 @@ async function loadRecords() {
     state.columns = saved.columns || [];
     state.cells = new Set(saved.cells || []);
   }
+  const currentGroupIds = new Set(state.groups.map((group) => String(group.id)));
+  state.hiddenGroupIds = new Set([...state.hiddenGroupIds].filter((id) => currentGroupIds.has(String(id))));
   renderMatrix();
   renderChapter();
   updateSelectionTray();
@@ -472,9 +503,17 @@ function renderChapter() {
 
 function updateSelectionTray() {
   const ids = selectedSentenceIds();
-  els.selectionTray.hidden = ids.length === 0;
-  els.selectionCount.textContent = `${ids.length} sentence${ids.length === 1 ? '' : 's'} selected`;
+  const editingGroup = state.groups.find((group) => String(group.id) === String(state.editingGroupId));
+  els.selectionTray.hidden = ids.length === 0 && !editingGroup;
+  els.selectionCount.textContent = editingGroup
+    ? `${ids.length} sentence${ids.length === 1 ? '' : 's'} in this category`
+    : `${ids.length} sentence${ids.length === 1 ? '' : 's'} selected`;
+  els.selectionMode.hidden = !editingGroup;
+  els.selectionMode.textContent = editingGroup ? `Editing “${editingGroup.name}”` : '';
   els.selectionReference.textContent = formatReferences(ids);
+  els.clearSelection.textContent = editingGroup ? 'Cancel edit' : 'Clear';
+  els.createGroupButton.textContent = editingGroup ? 'Save category changes' : 'Create passage group';
+  els.createGroupButton.disabled = ids.length === 0;
 }
 
 function setView(view) {
@@ -502,8 +541,36 @@ function makePassageDetail(group) {
   return detail;
 }
 
+function renderCategoryFilter(groups = orderedGroups()) {
+  const empty = groups.length === 0;
+  els.categoryFilter.hidden = empty;
+  els.categoryFilterList.replaceChildren();
+  if (empty) return;
+  const visibleCount = groups.filter((group) => !state.hiddenGroupIds.has(String(group.id))).length;
+  els.categoryFilterSummary.textContent = `Showing ${visibleCount} of ${groups.length} categories in Matthew order.`;
+  groups.forEach((group) => {
+    const label = document.createElement('label');
+    label.className = 'category-filter-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !state.hiddenGroupIds.has(String(group.id));
+    checkbox.dataset.filterGroupId = group.id;
+    const copy = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = group.name;
+    const ref = document.createElement('small');
+    ref.textContent = group.reference_text || formatReferences(group.sentence_keys || []);
+    copy.append(name, ref);
+    label.append(checkbox, copy);
+    els.categoryFilterList.append(label);
+  });
+}
+
 function renderMatrix() {
+  const groups = orderedGroups();
+  const visibleGroups = groups.filter((group) => !state.hiddenGroupIds.has(String(group.id)));
   els.groupCountBadge.textContent = state.groups.length;
+  renderCategoryFilter(groups);
   els.matrixHeadRow.replaceChildren();
   const passageHeader = document.createElement('th');
   passageHeader.className = 'passage-column';
@@ -512,11 +579,33 @@ function renderMatrix() {
   state.columns.forEach((column) => {
     const th = document.createElement('th');
     th.scope = 'col';
-    th.textContent = column.name;
+    const heading = document.createElement('div');
+    heading.className = 'column-heading';
+    const label = document.createElement('span');
+    label.textContent = column.name;
+    const actions = document.createElement('span');
+    actions.className = 'column-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'column-action';
+    edit.dataset.editColumn = column.id;
+    edit.setAttribute('aria-label', `Rename ${column.name} column`);
+    edit.title = 'Rename column';
+    edit.textContent = '✎';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'column-action is-danger';
+    remove.dataset.deleteColumn = column.id;
+    remove.setAttribute('aria-label', `Delete ${column.name} column`);
+    remove.title = 'Delete column';
+    remove.textContent = '×';
+    actions.append(edit, remove);
+    heading.append(label, actions);
+    th.append(heading);
     els.matrixHeadRow.append(th);
   });
   els.matrixBody.replaceChildren();
-  state.groups.forEach((group) => {
+  visibleGroups.forEach((group) => {
     const row = document.createElement('tr');
     const passageCell = document.createElement('td');
     const summary = document.createElement('div');
@@ -537,6 +626,15 @@ function renderMatrix() {
     ref.className = 'passage-ref';
     ref.textContent = group.reference_text || formatReferences(group.sentence_keys || []);
     labels.append(name, ref);
+    const groupActions = document.createElement('div');
+    groupActions.className = 'group-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'edit-group';
+    edit.dataset.editGroup = group.id;
+    edit.setAttribute('aria-label', `Edit ${group.name}`);
+    edit.title = 'Edit category name and sentences';
+    edit.textContent = '✎';
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'delete-group';
@@ -544,7 +642,8 @@ function renderMatrix() {
     remove.setAttribute('aria-label', `Delete ${group.name}`);
     remove.title = 'Delete passage group';
     remove.textContent = '×';
-    summary.append(expand, labels, remove);
+    groupActions.append(edit, remove);
+    summary.append(expand, labels, groupActions);
     passageCell.append(summary, makePassageDetail(group));
     row.append(passageCell);
     state.columns.forEach((column) => {
@@ -566,12 +665,39 @@ function renderMatrix() {
   });
   const empty = state.groups.length === 0;
   els.matrixEmpty.hidden = !empty;
-  els.matrixWrap.hidden = empty;
+  els.matrixFilterEmpty.hidden = empty || visibleGroups.length > 0;
+  els.matrixWrap.hidden = empty || visibleGroups.length === 0;
 }
 
 async function createGroup(name) {
   const ids = selectedSentenceIds();
+  if (!ids.length) throw new Error('A category must contain at least one sentence.');
   const reference = formatReferences(ids);
+  const editingGroup = state.groups.find((item) => String(item.id) === String(state.editingGroupId));
+  if (editingGroup) {
+    let updated;
+    if (state.mode === 'supabase') {
+      const result = await state.supabase.from('verse_groups')
+        .update({ name, reference_text: reference, sentence_keys: ids })
+        .eq('id', editingGroup.id)
+        .select()
+        .single();
+      if (result.error) throw result.error;
+      updated = result.data;
+    } else {
+      updated = { ...editingGroup, name, reference_text: reference, sentence_keys: ids };
+    }
+    state.groups = state.groups.map((item) => String(item.id) === String(editingGroup.id) ? updated : item);
+    state.editingGroupId = null;
+    state.selected.clear();
+    if (state.mode === 'local') saveLocal();
+    renderChapter();
+    updateSelectionTray();
+    renderMatrix();
+    renderAccountPanel();
+    toast(`Updated “${name}”.`);
+    return;
+  }
   let group;
   if (state.mode === 'supabase') {
     const result = await state.supabase.from('verse_groups').insert({ user_id: state.userId, name, reference_text: reference, sentence_keys: ids }).select().single();
@@ -583,12 +709,37 @@ async function createGroup(name) {
     saveLocal();
   }
   if (state.mode === 'supabase') state.groups.push(group);
+  state.hiddenGroupIds.delete(String(group.id));
   state.selected.clear();
   renderChapter();
   updateSelectionTray();
   renderMatrix();
   renderAccountPanel();
   toast(`Saved “${name}”.`);
+}
+
+function editGroup(groupId) {
+  const group = state.groups.find((item) => String(item.id) === String(groupId));
+  if (!group) return;
+  if (state.selected.size && String(state.editingGroupId) !== String(group.id)
+    && !window.confirm('Replace the current sentence selection with this category’s saved sentences?')) return;
+  state.editingGroupId = String(group.id);
+  state.selected = new Set(group.sentence_keys || []);
+  const firstSentence = sentenceById.get(selectedSentenceIds()[0]);
+  if (firstSentence) state.chapter = firstSentence.chapter;
+  renderChapter();
+  updateSelectionTray();
+  setView('scripture');
+  toast('Tap sentences to add or remove them, then choose Save category changes.');
+}
+
+function cancelGroupEdit() {
+  const wasEditing = Boolean(state.editingGroupId);
+  state.editingGroupId = null;
+  state.selected.clear();
+  renderChapter();
+  updateSelectionTray();
+  if (wasEditing) toast('Category edit cancelled.');
 }
 
 async function createColumn(name) {
@@ -605,6 +756,50 @@ async function createColumn(name) {
   if (state.mode === 'supabase') state.columns.push(column);
   renderMatrix();
   toast(`Added “${name}” column.`);
+}
+
+async function updateColumn(columnId, name) {
+  const column = state.columns.find((item) => String(item.id) === String(columnId));
+  if (!column) return;
+  let updated;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('category_columns').update({ name }).eq('id', column.id).select().single();
+    if (result.error) throw result.error;
+    updated = result.data;
+  } else {
+    updated = { ...column, name };
+  }
+  state.columns = state.columns.map((item) => String(item.id) === String(column.id) ? updated : item);
+  if (state.mode === 'local') saveLocal();
+  renderMatrix();
+  toast(`Renamed column to “${name}”.`);
+}
+
+async function deleteColumn(columnId) {
+  const column = state.columns.find((item) => String(item.id) === String(columnId));
+  if (!column || !window.confirm(`Delete the matrix column “${column.name}”? Its checkmarks will also be removed.`)) return;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('category_columns').delete().eq('id', column.id);
+    if (result.error) throw result.error;
+  }
+  state.columns = state.columns.filter((item) => String(item.id) !== String(column.id));
+  state.cells = new Set([...state.cells].filter((key) => !key.endsWith(`:${column.id}`)));
+  if (state.mode === 'local') saveLocal();
+  renderMatrix();
+  toast('Category column deleted.');
+}
+
+function openColumnDialog(column = null) {
+  state.editingColumnId = column ? String(column.id) : null;
+  els.columnName.value = column?.name || '';
+  els.columnDialogEyebrow.textContent = column ? 'Edit matrix column' : 'New matrix column';
+  els.columnDialogTitle.textContent = column ? 'Rename this category' : 'Add a category';
+  els.columnDialogCopy.textContent = column
+    ? 'Change the column name. Existing checkmarks in this column will be preserved.'
+    : 'This becomes a new column. Click any cell beneath it to classify that passage group.';
+  els.columnSubmitButton.textContent = column ? 'Save name' : 'Add column';
+  els.columnDialog.showModal();
+  setTimeout(() => els.columnName.focus(), 50);
 }
 
 async function toggleCell(groupId, columnId) {
@@ -632,6 +827,8 @@ async function deleteGroup(groupId) {
   state.groups = state.groups.filter((item) => String(item.id) !== String(groupId));
   state.cells = new Set([...state.cells].filter((key) => !key.startsWith(`${groupId}:`)));
   state.expanded.delete(String(groupId));
+  state.hiddenGroupIds.delete(String(groupId));
+  if (String(state.editingGroupId) === String(groupId)) cancelGroupEdit();
   if (state.mode === 'local') saveLocal();
   renderMatrix();
   renderChapter();
@@ -660,12 +857,19 @@ function bindEvents() {
     button.setAttribute('aria-pressed', state.selected.has(id) ? 'true' : 'false');
     updateSelectionTray();
   });
-  els.clearSelection.addEventListener('click', () => { state.selected.clear(); renderChapter(); updateSelectionTray(); });
+  els.clearSelection.addEventListener('click', () => {
+    if (state.editingGroupId) cancelGroupEdit();
+    else { state.selected.clear(); renderChapter(); updateSelectionTray(); }
+  });
   els.createGroupButton.addEventListener('click', () => {
+    const editingGroup = state.groups.find((group) => String(group.id) === String(state.editingGroupId));
     els.groupDialogReference.textContent = formatReferences(selectedSentenceIds());
-    els.groupName.value = '';
+    els.groupName.value = editingGroup?.name || '';
+    els.groupDialog.querySelector('.eyebrow').textContent = editingGroup ? 'Edit category' : 'New passage group';
+    els.groupDialog.querySelector('h2').textContent = editingGroup ? 'Save this category' : 'Name this selection';
+    els.groupForm.querySelector('[type="submit"]').textContent = editingGroup ? 'Save changes' : 'Save group';
     els.groupDialog.showModal();
-    setTimeout(() => els.groupName.focus(), 50);
+    setTimeout(() => { els.groupName.focus(); els.groupName.select(); }, 50);
   });
   els.groupForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -673,16 +877,27 @@ function bindEvents() {
     if (!name) return;
     try { await createGroup(name); els.groupDialog.close(); } catch (error) { toast(error.message || 'Could not save the group.', 'error'); }
   });
-  els.addColumnButton.addEventListener('click', () => { els.columnName.value = ''; els.columnDialog.showModal(); setTimeout(() => els.columnName.focus(), 50); });
+  els.addColumnButton.addEventListener('click', () => openColumnDialog());
   els.columnForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const name = els.columnName.value.trim();
     if (!name) return;
-    try { await createColumn(name); els.columnDialog.close(); } catch (error) { toast(error.message || 'Could not add the column.', 'error'); }
+    try {
+      if (state.editingColumnId) await updateColumn(state.editingColumnId, name);
+      else await createColumn(name);
+      state.editingColumnId = null;
+      els.columnDialog.close();
+    } catch (error) { toast(error.message || 'Could not save the column.', 'error'); }
   });
   els.matrixBody.addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-edit-group]');
+    if (edit) { event.stopPropagation(); editGroup(edit.dataset.editGroup); return; }
     const remove = event.target.closest('[data-delete-group]');
-    if (remove) { event.stopPropagation(); await deleteGroup(remove.dataset.deleteGroup); return; }
+    if (remove) {
+      event.stopPropagation();
+      try { await deleteGroup(remove.dataset.deleteGroup); } catch (error) { toast(error.message || 'Could not delete the category.', 'error'); }
+      return;
+    }
     const toggle = event.target.closest('.cell-toggle');
     if (toggle) {
       try { await toggleCell(toggle.dataset.groupId, toggle.dataset.columnId); } catch (error) { toast(error.message || 'Could not update the cell.', 'error'); }
@@ -697,6 +912,32 @@ function bindEvents() {
   });
   els.matrixBody.addEventListener('keydown', (event) => {
     if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.passage-summary')) { event.preventDefault(); event.target.click(); }
+  });
+  els.matrixHeadRow.addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-edit-column]');
+    if (edit) {
+      const column = state.columns.find((item) => String(item.id) === String(edit.dataset.editColumn));
+      if (column) openColumnDialog(column);
+      return;
+    }
+    const remove = event.target.closest('[data-delete-column]');
+    if (remove) {
+      try { await deleteColumn(remove.dataset.deleteColumn); } catch (error) { toast(error.message || 'Could not delete the column.', 'error'); }
+    }
+  });
+  els.categoryFilterList.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-filter-group-id]');
+    if (!checkbox) return;
+    const id = String(checkbox.dataset.filterGroupId);
+    if (checkbox.checked) state.hiddenGroupIds.delete(id); else state.hiddenGroupIds.add(id);
+    const scrollTop = els.categoryFilterList.scrollTop;
+    renderMatrix();
+    els.categoryFilterList.scrollTop = scrollTop;
+  });
+  els.filterAll.addEventListener('click', () => { state.hiddenGroupIds.clear(); renderMatrix(); });
+  els.filterNone.addEventListener('click', () => {
+    state.hiddenGroupIds = new Set(state.groups.map((group) => String(group.id)));
+    renderMatrix();
   });
   els.settingsButton.addEventListener('click', () => { renderAccountPanel(); els.settingsDialog.showModal(); });
   els.settingsForm.addEventListener('submit', async (event) => {

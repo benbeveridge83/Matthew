@@ -101,17 +101,38 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .primary-button, .secondary-button, .text-button { border-radius: 9px; min-height: 42px; padding: 9px 15px; cursor: pointer; font-weight: 700; border: 0; }
 .primary-button { color: white; background: var(--accent); }
 .primary-button:hover { background: var(--accent-dark); }
+.primary-button:disabled { cursor: not-allowed; opacity: .45; }
 .secondary-button { color: var(--ink); background: var(--white); border: 1px solid var(--line); }
 .secondary-button:hover { border-color: var(--accent); }
 .text-button { background: transparent; color: inherit; }
 .text-button:hover { text-decoration: underline; }
 .matrix-hero { align-items: center; }
+.category-filter { margin-top: 26px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: #f6f1e7; }
+.category-filter[hidden] { display: none; }
+.category-filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.category-filter-heading .eyebrow { margin-bottom: 5px; }
+.category-filter-heading h2 { margin: 0; font-size: 22px; }
+.filter-summary { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.filter-actions { display: flex; gap: 7px; }
+.compact-button { min-height: 35px; padding: 6px 11px; font-size: 12px; }
+.category-filter-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; max-height: 250px; overflow: auto; margin-top: 15px; padding: 2px; }
+.category-filter-option { display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: 9px; padding: 9px 10px; border: 1px solid #ddd3c2; border-radius: 9px; background: var(--white); cursor: pointer; }
+.category-filter-option:hover { border-color: #bda892; }
+.category-filter-option input { width: 17px; height: 17px; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); }
+.category-filter-option span, .category-filter-option strong, .category-filter-option small { display: block; min-width: 0; }
+.category-filter-option strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.category-filter-option small { margin-top: 3px; color: var(--accent); font-size: 9px; font-weight: 700; }
 .matrix-wrap { margin-top: 30px; overflow: auto; border: 1px solid var(--line); border-radius: 13px; background: var(--white); }
 .matrix-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 650px; }
 .matrix-table th, .matrix-table td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px; vertical-align: top; }
 .matrix-table tr:last-child td { border-bottom: 0; }
 .matrix-table th:last-child, .matrix-table td:last-child { border-right: 0; }
 .matrix-table th { background: #eee7db; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; text-align: center; position: sticky; top: 0; z-index: 3; min-width: 135px; }
+.column-heading { display: grid; justify-items: center; gap: 7px; }
+.column-actions { display: flex; gap: 3px; }
+.column-action { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #cfc4b2; border-radius: 6px; background: rgba(255,255,255,.65); color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; }
+.column-action:hover { border-color: var(--accent); color: var(--accent); background: white; }
+.column-action.is-danger:hover { color: #a63d31; background: #f7e2dd; }
 .matrix-table .passage-column { text-align: left; min-width: 330px; left: 0; z-index: 5; }
 .matrix-table td:first-child { background: var(--white); position: sticky; left: 0; z-index: 2; }
 .passage-summary { display: grid; grid-template-columns: 24px 1fr auto; gap: 9px; align-items: start; cursor: pointer; }
@@ -119,7 +140,9 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .passage-summary[aria-expanded="true"] .expand-icon { transform: rotate(90deg); }
 .passage-name { font: 700 15px/1.35 "Libre Caslon Text", serif; }
 .passage-ref { color: var(--accent); font-size: 10px; font-weight: 700; margin-top: 5px; }
-.delete-group { border: 0; background: transparent; color: #9c9488; cursor: pointer; border-radius: 5px; }
+.group-actions { display: flex; align-items: center; gap: 2px; }
+.delete-group, .edit-group { width: 27px; height: 27px; display: grid; place-items: center; border: 0; background: transparent; color: #9c9488; cursor: pointer; border-radius: 5px; font-size: 15px; }
+.edit-group:hover { color: var(--accent); background: var(--accent-soft); }
 .delete-group:hover { color: #a63d31; background: #f7e2dd; }
 .passage-detail { margin: 12px 0 2px 32px; padding: 12px 14px; border-left: 2px solid var(--accent-soft); background: #faf5ec; }
 .passage-detail p { margin: 0 0 10px; font: 400 13px/1.6 "Libre Caslon Text", serif; }
@@ -133,6 +156,8 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .empty-state > span { font-size: 28px; color: var(--accent); }
 .empty-state h2 { font-size: 27px; margin: 10px 0 6px; }
 .empty-state p { color: var(--muted); margin: 0 0 20px; }
+.compact-empty { padding: 45px 20px; }
+.selection-mode { color: #f0bca8 !important; font-weight: 700; }
 .app-dialog { width: min(520px, calc(100% - 26px)); border: 0; border-radius: 18px; padding: 0; background: var(--paper); color: var(--ink); box-shadow: 0 25px 90px rgba(40,33,23,.3); }
 .app-dialog::backdrop { background: rgba(35,31,26,.56); backdrop-filter: blur(3px); }
 .app-dialog form { position: relative; padding: 32px; display: grid; gap: 12px; }
@@ -172,6 +197,7 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .tab { flex: 1; }
   .sync-status span { display: none; }
   .reading-toolbar, .matrix-hero { align-items: flex-start; flex-direction: column; }
+  .category-filter-heading { align-items: flex-start; flex-direction: column; }
   .chapter-tools { width: 100%; }
   .reader-layout { grid-template-columns: 1fr; }
   .chapter-rail { border: 0; padding: 0; overflow-x: auto; }
@@ -192,6 +218,7 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .primary-button { padding-inline: 12px; }
   .app-dialog form { padding: 28px 20px 22px; }
   .account-actions { grid-template-columns: 1fr; }
+  .category-filter-list { grid-template-columns: 1fr; max-height: 290px; }
   .split-actions { grid-template-columns: 1fr 1fr; }
   .split-actions span { display: none; }
   .site-footer { width: calc(100% - 24px); flex-direction: column; gap: 4px; }

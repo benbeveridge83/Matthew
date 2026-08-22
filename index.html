@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.1.0" />
+  <link rel="stylesheet" href="styles.css?v=1.2.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -67,11 +67,30 @@
           </div>
           <button id="add-column-button" class="primary-button" type="button">＋ New category column</button>
         </div>
+        <section id="category-filter" class="category-filter" aria-labelledby="category-filter-title" hidden>
+          <div class="category-filter-heading">
+            <div>
+              <p class="eyebrow">Display categories</p>
+              <h2 id="category-filter-title">Filter the matrix</h2>
+              <p id="category-filter-summary" class="filter-summary"></p>
+            </div>
+            <div class="filter-actions" aria-label="Category filter actions">
+              <button id="filter-all" class="secondary-button compact-button" type="button">Select all</button>
+              <button id="filter-none" class="secondary-button compact-button" type="button">Select none</button>
+            </div>
+          </div>
+          <div id="category-filter-list" class="category-filter-list"></div>
+        </section>
         <div id="matrix-empty" class="empty-state" hidden>
           <span aria-hidden="true">✦</span>
           <h2>No passage groups yet</h2>
           <p>Select sentences in the Scripture tab and give the selection a name.</p>
           <button class="secondary-button" data-go-scripture type="button">Choose sentences</button>
+        </div>
+        <div id="matrix-filter-empty" class="empty-state compact-empty" hidden>
+          <span aria-hidden="true">⌁</span>
+          <h2>No categories selected</h2>
+          <p>Choose one or more category checkboxes above, or use Select all.</p>
         </div>
         <div id="matrix-wrap" class="matrix-wrap">
           <table class="matrix-table">
@@ -84,7 +103,7 @@
   </div>
 
   <div id="selection-tray" class="selection-tray" aria-live="polite" hidden>
-    <div><strong id="selection-count">0 sentences selected</strong><span id="selection-reference">—</span></div>
+    <div><strong id="selection-count">0 sentences selected</strong><span id="selection-mode" class="selection-mode" hidden></span><span id="selection-reference">—</span></div>
     <div class="selection-actions">
       <button id="clear-selection" class="text-button" type="button">Clear</button>
       <button id="create-group-button" class="primary-button" type="button">Create passage group</button>
@@ -109,14 +128,14 @@
   <dialog id="column-dialog" class="app-dialog">
     <form id="column-form" method="dialog">
       <button class="dialog-close" value="cancel" aria-label="Close">×</button>
-      <p class="eyebrow">New matrix column</p>
-      <h2>Add a category</h2>
-      <p class="dialog-copy">This becomes a new column. Click any cell beneath it to classify that passage group.</p>
+      <p id="column-dialog-eyebrow" class="eyebrow">New matrix column</p>
+      <h2 id="column-dialog-title">Add a category</h2>
+      <p id="column-dialog-copy" class="dialog-copy">This becomes a new column. Click any cell beneath it to classify that passage group.</p>
       <label for="column-name">Category name</label>
       <input id="column-name" name="columnName" maxlength="80" required placeholder="e.g., Teaching, Miracle, Prophecy" />
       <div class="dialog-actions">
         <button class="secondary-button" value="cancel" type="button" data-close-dialog>Cancel</button>
-        <button class="primary-button" value="default" type="submit">Add column</button>
+        <button id="column-submit-button" class="primary-button" value="default" type="submit">Add column</button>
       </div>
     </form>
   </dialog>
@@ -165,9 +184,9 @@
   </dialog>
 
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.1.0 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.2.0 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
-  <script type="module" src="app.js?v=1.1.0"></script>
+  <script type="module" src="app.js?v=1.2.0"></script>
 </body>
 </html>
