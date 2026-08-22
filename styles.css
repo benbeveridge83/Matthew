@@ -39,6 +39,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .sync-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .sync-status i { width: 8px; height: 8px; border-radius: 50%; background: #aa9e8c; }
 .sync-status[data-state="online"] i { background: #4f8b5d; box-shadow: 0 0 0 4px rgba(79,139,93,.12); }
+.sync-status[data-state="temporary"] i { background: #c58a32; box-shadow: 0 0 0 4px rgba(197,138,50,.13); }
 .sync-status[data-state="loading"] i { background: #c58a32; animation: pulse 1s infinite alternate; }
 @keyframes pulse { to { opacity: .35; } }
 .icon-button, .square-button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); cursor: pointer; }
@@ -68,6 +69,12 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .sentence-list { display: grid; gap: 8px; }
 .sentence-block { width: 100%; display: grid; grid-template-columns: 62px 1fr 26px; gap: 14px; align-items: start; text-align: left; border: 2px solid transparent; background: transparent; border-radius: 11px; padding: 11px 12px; cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; }
 .sentence-block:hover { background: rgba(255,255,255,.72); border-color: var(--line); transform: translateX(2px); }
+.sentence-block.is-saved,
+.sentence-block.is-saved:hover {
+  background: #edf1e9;
+  border-color: #9bad91;
+  box-shadow: inset 5px 0 0 var(--sage);
+}
 .sentence-block.is-selected,
 .sentence-block.is-selected:hover {
   background: #f0d3c7;
@@ -77,8 +84,13 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 }
 .sentence-block.is-selected .sentence-reference { color: var(--accent-dark); }
 .sentence-reference { color: var(--accent); font-size: 10px; font-weight: 700; padding-top: 5px; white-space: nowrap; }
+.sentence-content { min-width: 0; }
 .sentence-text { font: 400 17px/1.72 "Libre Caslon Text", Georgia, serif; }
+.saved-group-list { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 7px; }
+.saved-label { color: var(--sage); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.saved-group-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; padding: 3px 8px; color: #405044; background: #d9e3d3; border: 1px solid #b7c7ae; font-size: 10px; font-weight: 700; }
 .selection-check { width: 24px; height: 24px; border: 2px solid #b4a895; border-radius: 50%; display: grid; place-items: center; margin-top: 2px; color: transparent; font-size: 15px; font-weight: 700; line-height: 1; transition: background .15s, border-color .15s, color .15s, transform .15s; }
+.sentence-block.is-saved .selection-check { color: white; border-color: var(--sage); background: var(--sage); box-shadow: 0 2px 6px rgba(71,87,74,.2); }
 .sentence-block.is-selected .selection-check { color: white; border-color: var(--accent-dark); background: var(--accent); transform: scale(1.08); box-shadow: 0 2px 6px rgba(125, 56, 40, .25); }
 .selection-tray { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; width: min(780px, calc(100% - 30px)); min-height: 76px; padding: 13px 14px 13px 20px; border-radius: 16px; background: #292824; color: white; box-shadow: 0 20px 60px rgba(37,31,24,.32); display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .selection-tray[hidden] { display: none; }
@@ -131,6 +143,20 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .dialog-reference { color: var(--accent); font-weight: 700; font-size: 12px; margin: 0 0 4px; }
 .dialog-copy, .privacy-note { color: var(--muted); line-height: 1.5; margin: 0 0 4px; font-size: 13px; }
 .privacy-note { font-size: 11px; }
+.account-section { margin-top: 7px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #f6f1e7; }
+.account-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.account-heading .eyebrow { margin-bottom: 5px; }
+.account-heading h3 { margin: 0; font: 700 18px/1.25 "Libre Caslon Text", Georgia, serif; }
+.account-badge { flex: 0 0 auto; border-radius: 999px; padding: 5px 9px; color: #675f53; background: #e8dfd1; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.account-badge.is-temporary { color: #754f15; background: #f0dfbd; }
+.account-badge.is-synced { color: #3f5d45; background: #dce8dc; }
+#anonymous-account-actions { display: grid; gap: 9px; margin-top: 12px; }
+#anonymous-account-actions[hidden] { display: none; }
+.account-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.account-actions button { min-height: 48px; line-height: 1.25; }
+.signed-in-account { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 9px; color: #3f5d45; background: #e6eee3; }
+.signed-in-account[hidden] { display: none; }
+.signed-in-account strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .split-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; }
 .danger-text { color: #9b3d32; padding-left: 0; }
@@ -165,6 +191,7 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .selection-actions { justify-content: flex-end; }
   .primary-button { padding-inline: 12px; }
   .app-dialog form { padding: 28px 20px 22px; }
+  .account-actions { grid-template-columns: 1fr; }
   .split-actions { grid-template-columns: 1fr 1fr; }
   .split-actions span { display: none; }
   .site-footer { width: calc(100% - 24px); flex-direction: column; gap: 4px; }

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.0.3" />
+  <link rel="stylesheet" href="styles.css?v=1.1.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -126,12 +126,35 @@
       <button class="dialog-close" value="cancel" aria-label="Close">×</button>
       <p class="eyebrow">Data connection</p>
       <h2>Supabase settings</h2>
-      <p class="dialog-copy">Without Supabase, your work stays in this browser. Connect to save it securely under an anonymous Supabase account.</p>
+      <p class="dialog-copy">Connect Supabase, then use one email account on your phone and computer so both devices open the same study.</p>
       <label for="supabase-url">Project URL</label>
       <input id="supabase-url" type="url" autocomplete="off" placeholder="https://your-project.supabase.co" />
       <label for="supabase-key">Publishable key</label>
       <input id="supabase-key" type="password" autocomplete="off" placeholder="sb_publishable_…" />
       <p class="privacy-note">Use only a publishable key—never a secret or service-role key.</p>
+      <section id="account-section" class="account-section" aria-labelledby="account-title">
+        <div class="account-heading">
+          <div>
+            <p class="eyebrow">Cross-device sync</p>
+            <h3 id="account-title">One study on every device</h3>
+          </div>
+          <span id="account-badge" class="account-badge">Not connected</span>
+        </div>
+        <p id="account-status" class="dialog-copy">Connect Supabase above to set up cross-device access.</p>
+        <div id="anonymous-account-actions" hidden>
+          <label for="account-email">Email address</label>
+          <input id="account-email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+          <div class="account-actions">
+            <button id="upgrade-account-button" class="primary-button" type="button">Keep this device’s categories</button>
+            <button id="signin-link-button" class="secondary-button" type="button">Open my existing study</button>
+          </div>
+          <p id="account-help" class="privacy-note">On the device that already has your categories, choose “Keep this device’s categories” first.</p>
+        </div>
+        <div id="signed-in-account" class="signed-in-account" hidden>
+          <strong id="signed-in-email"></strong>
+          <button id="signout-button" class="text-button danger-text" type="button">Sign out</button>
+        </div>
+      </section>
       <div class="dialog-actions split-actions">
         <button id="disconnect-button" class="text-button danger-text" value="cancel" type="button">Use local mode</button>
         <span></span>
@@ -142,9 +165,9 @@
   </dialog>
 
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.0.3 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.1.0 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
-  <script type="module" src="app.js?v=1.0.3"></script>
+  <script type="module" src="app.js?v=1.1.0"></script>
 </body>
 </html>
