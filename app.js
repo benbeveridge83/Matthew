@@ -1,4 +1,4 @@
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
@@ -19,6 +19,8 @@ const state = {
   hiddenGroupIds: new Set(),
   editingGroupId: null,
   editingColumnId: null,
+  activeCategoryGroupId: null,
+  activeManagerGroupId: null,
   groups: [],
   columns: [],
   cells: new Set(),
@@ -52,6 +54,18 @@ const els = {
   accountEmail: $('#account-email'), accountHelp: $('#account-help'), upgradeAccountButton: $('#upgrade-account-button'),
   signinLinkButton: $('#signin-link-button'), signedInAccount: $('#signed-in-account'), signedInEmail: $('#signed-in-email'),
   signoutButton: $('#signout-button'), selectionMode: $('#selection-mode'),
+  categoryDialog: $('#category-dialog'), categoryForm: $('#category-form'), categoryDialogEyebrow: $('#category-dialog-eyebrow'),
+  categoryDialogTitle: $('#category-dialog-title'), categoryDialogReference: $('#category-dialog-reference'),
+  categoryDialogCopy: $('#category-dialog-copy'), categoryAssignmentList: $('#category-assignment-list'),
+  categoryAssignmentEmpty: $('#category-assignment-empty'), categorySelectAll: $('#category-select-all'),
+  categorySelectNone: $('#category-select-none'), startSubgroupsButton: $('#start-subgroups-button'),
+  categoryPane: $('#category-pane'), subgroupPane: $('#subgroup-pane'), subgroupParentName: $('#subgroup-parent-name'),
+  subgroupFirstName: $('#subgroup-first-name'), subgroupSecondName: $('#subgroup-second-name'),
+  subgroupSentenceList: $('#subgroup-sentence-list'), subgroupError: $('#subgroup-error'),
+  subgroupBackButton: $('#subgroup-back-button'), categorySubmitButton: $('#category-submit-button'),
+  subgroupManagerDialog: $('#subgroup-manager-dialog'), subgroupManagerTitle: $('#subgroup-manager-title'),
+  subgroupManagerCopy: $('#subgroup-manager-copy'), subgroupManagerList: $('#subgroup-manager-list'),
+  removeSubgroupsButton: $('#remove-subgroups-button'),
 };
 
 function localId() {
@@ -101,7 +115,39 @@ function compareGroupsByMatthewOrder(a, b) {
 }
 
 function orderedGroups() {
-  return state.groups.slice().sort(compareGroupsByMatthewOrder);
+  return state.groups.filter((group) => !group.parent_group_id).sort(compareGroupsByMatthewOrder);
+}
+
+function subgroupsFor(groupId) {
+  return state.groups
+    .filter((group) => String(group.parent_group_id || '') === String(groupId))
+    .sort(compareGroupsByMatthewOrder);
+}
+
+function isSubgroup(group) {
+  return Boolean(group?.parent_group_id);
+}
+
+function isSplitGroup(group) {
+  return subgroupsFor(group?.id).length > 0;
+}
+
+function visibleGroupReference(group) {
+  return group?.reference_text || formatReferences(group?.sentence_keys || []);
+}
+
+function categoryIdsForGroup(groupId) {
+  return new Set(state.columns
+    .filter((column) => state.cells.has(`${groupId}:${column.id}`))
+    .map((column) => String(column.id)));
+}
+
+function aggregateCategoryState(groupId, columnId) {
+  const children = subgroupsFor(groupId);
+  if (!children.length) return state.cells.has(`${groupId}:${columnId}`) ? 'all' : 'none';
+  const count = children.filter((child) => state.cells.has(`${child.id}:${columnId}`)).length;
+  if (!count) return 'none';
+  return count === children.length ? 'all' : 'some';
 }
 
 function isAnonymousUser(user = state.user) {
@@ -112,6 +158,7 @@ function savedGroupsBySentence() {
   const map = new Map();
   state.groups.forEach((group) => {
     if (String(group.id) === String(state.editingGroupId)) return;
+    if (!isSubgroup(group) && isSplitGroup(group)) return;
     (group.sentence_keys || []).forEach((id) => {
       if (!map.has(id)) map.set(id, []);
       map.get(id).push(group);
@@ -132,8 +179,8 @@ function updateConnectionStatus() {
 
 function renderAccountPanel() {
   const local = localSnapshot();
-  const localCount = local.groups?.length || 0;
-  const syncedCount = state.groups.length;
+  const localCount = (local.groups || []).filter((group) => !group.parent_group_id).length;
+  const syncedCount = orderedGroups().length;
   const connected = state.mode === 'supabase' && state.supabase;
   const temporary = connected && isAnonymousUser();
 
@@ -234,14 +281,24 @@ async function importLocalRecords() {
   let columnsImported = 0;
   let cellsImported = 0;
 
-  for (const localGroup of local.groups || []) {
-    let remoteGroup = remoteGroups.find((group) => group.name === localGroup.name && sameSentenceKeys(group.sentence_keys || [], localGroup.sentence_keys || []));
+  const localGroups = local.groups || [];
+  const importOrder = [
+    ...localGroups.filter((group) => !group.parent_group_id),
+    ...localGroups.filter((group) => group.parent_group_id),
+  ];
+  for (const localGroup of importOrder) {
+    const remoteParentId = localGroup.parent_group_id ? groupIdMap.get(String(localGroup.parent_group_id)) : null;
+    if (localGroup.parent_group_id && !remoteParentId) continue;
+    let remoteGroup = remoteGroups.find((group) => group.name === localGroup.name
+      && sameSentenceKeys(group.sentence_keys || [], localGroup.sentence_keys || [])
+      && String(group.parent_group_id || '') === String(remoteParentId || ''));
     if (!remoteGroup) {
       const result = await state.supabase.from('verse_groups').insert({
         user_id: state.userId,
         name: localGroup.name,
         reference_text: localGroup.reference_text || formatReferences(localGroup.sentence_keys || []),
         sentence_keys: localGroup.sentence_keys || [],
+        parent_group_id: remoteParentId,
       }).select().single();
       if (result.error) throw result.error;
       remoteGroup = result.data;
@@ -461,10 +518,11 @@ function renderChapter() {
     verse.sentences.forEach((sentence) => {
       const savedGroups = savedMap.get(sentence.id) || [];
       const selected = state.selected.has(sentence.id);
-      const button = document.createElement('button');
-      button.type = 'button';
+      const button = document.createElement('div');
       button.className = `sentence-block${savedGroups.length ? ' is-saved' : ''}${selected ? ' is-selected' : ''}`;
       button.dataset.sentenceId = sentence.id;
+      button.setAttribute('role', 'button');
+      button.setAttribute('tabindex', '0');
       button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       if (savedGroups.length) button.title = `Saved in: ${savedGroups.map((group) => group.name).join(', ')}`;
       const ref = document.createElement('span');
@@ -484,8 +542,11 @@ function renderChapter() {
         savedLabel.textContent = 'Saved in';
         savedList.append(savedLabel);
         savedGroups.forEach((group) => {
-          const chip = document.createElement('span');
+          const chip = document.createElement('button');
+          chip.type = 'button';
           chip.className = 'saved-group-chip';
+          chip.dataset.openGroup = group.id;
+          chip.setAttribute('aria-label', `Open categories for ${group.name}`);
           chip.textContent = group.name;
           savedList.append(chip);
         });
@@ -559,17 +620,99 @@ function renderCategoryFilter(groups = orderedGroups()) {
     const name = document.createElement('strong');
     name.textContent = group.name;
     const ref = document.createElement('small');
-    ref.textContent = group.reference_text || formatReferences(group.sentence_keys || []);
+    ref.textContent = visibleGroupReference(group);
     copy.append(name, ref);
     label.append(checkbox, copy);
     els.categoryFilterList.append(label);
   });
 }
 
+function makeMatrixRow(group, { subgroup = false } = {}) {
+  const row = document.createElement('tr');
+  if (subgroup) row.className = 'subgroup-row';
+  const passageCell = document.createElement('td');
+  const summary = document.createElement('div');
+  const children = subgroup ? [] : subgroupsFor(group.id);
+  summary.className = `passage-summary${subgroup ? ' is-subgroup' : ''}${children.length ? ' is-split' : ''}`;
+  summary.dataset.openGroup = group.id;
+  summary.setAttribute('role', 'button');
+  summary.setAttribute('tabindex', '0');
+  summary.setAttribute('aria-label', children.length
+    ? `Manage subgroups for ${group.name}`
+    : `Choose categories for ${group.name}`);
+  const launch = document.createElement('span');
+  launch.className = 'open-icon';
+  launch.textContent = children.length ? '▾' : '›';
+  const labels = document.createElement('div');
+  const name = document.createElement('div');
+  name.className = 'passage-name';
+  name.textContent = group.name;
+  const ref = document.createElement('div');
+  ref.className = 'passage-ref';
+  ref.textContent = visibleGroupReference(group);
+  labels.append(name, ref);
+  if (subgroup) {
+    const badge = document.createElement('span');
+    badge.className = 'subgroup-badge';
+    badge.textContent = 'Subgroup';
+    labels.append(badge);
+  } else if (children.length) {
+    const note = document.createElement('span');
+    note.className = 'derived-note';
+    note.textContent = `${children.length} subgroups · categories shown below`;
+    labels.append(note);
+  }
+  const groupActions = document.createElement('div');
+  groupActions.className = 'group-actions';
+  if (!subgroup) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'edit-group';
+    edit.dataset.editGroup = group.id;
+    edit.setAttribute('aria-label', `Edit ${group.name}`);
+    edit.title = children.length ? 'Subgroups must be removed before changing these sentences' : 'Edit passage-group name and sentences';
+    edit.textContent = '✎';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'delete-group';
+    remove.dataset.deleteGroup = group.id;
+    remove.setAttribute('aria-label', `Delete ${group.name}`);
+    remove.title = 'Delete passage group';
+    remove.textContent = '×';
+    groupActions.append(edit, remove);
+  }
+  summary.append(launch, labels, groupActions);
+  passageCell.append(summary);
+  row.append(passageCell);
+
+  state.columns.forEach((column) => {
+    const cell = document.createElement('td');
+    cell.className = 'matrix-cell';
+    const categoryState = subgroup ? aggregateCategoryState(group.id, column.id) : aggregateCategoryState(group.id, column.id);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = `cell-toggle${categoryState === 'all' ? ' is-on' : ''}${categoryState === 'some' ? ' is-partial' : ''}${children.length ? ' is-derived' : ''}`;
+    toggle.textContent = categoryState === 'some' ? '–' : '✓';
+    if (children.length) {
+      toggle.disabled = true;
+      toggle.setAttribute('aria-label', `${column.name} is ${categoryState === 'all' ? 'on for every' : categoryState === 'some' ? 'on for some' : 'off for every'} subgroup of ${group.name}`);
+      toggle.title = 'This category comes from the subgroups below.';
+    } else {
+      toggle.dataset.groupId = group.id;
+      toggle.dataset.columnId = column.id;
+      toggle.setAttribute('aria-pressed', categoryState === 'all' ? 'true' : 'false');
+      toggle.setAttribute('aria-label', `${categoryState === 'all' ? 'Remove' : 'Add'} ${group.name} ${categoryState === 'all' ? 'from' : 'to'} ${column.name}`);
+    }
+    cell.append(toggle);
+    row.append(cell);
+  });
+  return row;
+}
+
 function renderMatrix() {
   const groups = orderedGroups();
   const visibleGroups = groups.filter((group) => !state.hiddenGroupIds.has(String(group.id)));
-  els.groupCountBadge.textContent = state.groups.length;
+  els.groupCountBadge.textContent = groups.length;
   renderCategoryFilter(groups);
   els.matrixHeadRow.replaceChildren();
   const passageHeader = document.createElement('th');
@@ -606,67 +749,234 @@ function renderMatrix() {
   });
   els.matrixBody.replaceChildren();
   visibleGroups.forEach((group) => {
-    const row = document.createElement('tr');
-    const passageCell = document.createElement('td');
-    const summary = document.createElement('div');
-    const expanded = state.expanded.has(String(group.id));
-    summary.className = 'passage-summary';
-    summary.dataset.groupId = group.id;
-    summary.setAttribute('role', 'button');
-    summary.setAttribute('tabindex', '0');
-    summary.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    const expand = document.createElement('span');
-    expand.className = 'expand-icon';
-    expand.textContent = '›';
-    const labels = document.createElement('div');
-    const name = document.createElement('div');
-    name.className = 'passage-name';
-    name.textContent = group.name;
-    const ref = document.createElement('div');
-    ref.className = 'passage-ref';
-    ref.textContent = group.reference_text || formatReferences(group.sentence_keys || []);
-    labels.append(name, ref);
-    const groupActions = document.createElement('div');
-    groupActions.className = 'group-actions';
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.className = 'edit-group';
-    edit.dataset.editGroup = group.id;
-    edit.setAttribute('aria-label', `Edit ${group.name}`);
-    edit.title = 'Edit category name and sentences';
-    edit.textContent = '✎';
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'delete-group';
-    remove.dataset.deleteGroup = group.id;
-    remove.setAttribute('aria-label', `Delete ${group.name}`);
-    remove.title = 'Delete passage group';
-    remove.textContent = '×';
-    groupActions.append(edit, remove);
-    summary.append(expand, labels, groupActions);
-    passageCell.append(summary, makePassageDetail(group));
-    row.append(passageCell);
-    state.columns.forEach((column) => {
-      const cell = document.createElement('td');
-      cell.className = 'matrix-cell';
-      const key = `${group.id}:${column.id}`;
-      const toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.className = `cell-toggle${state.cells.has(key) ? ' is-on' : ''}`;
-      toggle.dataset.groupId = group.id;
-      toggle.dataset.columnId = column.id;
-      toggle.setAttribute('aria-pressed', state.cells.has(key) ? 'true' : 'false');
-      toggle.setAttribute('aria-label', `${state.cells.has(key) ? 'Remove' : 'Add'} ${group.name} ${state.cells.has(key) ? 'from' : 'to'} ${column.name}`);
-      toggle.textContent = '✓';
-      cell.append(toggle);
-      row.append(cell);
-    });
-    els.matrixBody.append(row);
+    els.matrixBody.append(makeMatrixRow(group));
+    subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true })));
   });
-  const empty = state.groups.length === 0;
+  const empty = groups.length === 0;
   els.matrixEmpty.hidden = !empty;
   els.matrixFilterEmpty.hidden = empty || visibleGroups.length > 0;
   els.matrixWrap.hidden = empty || visibleGroups.length === 0;
+}
+
+function renderCategoryAssignmentList(group) {
+  const selected = categoryIdsForGroup(group.id);
+  els.categoryAssignmentList.replaceChildren();
+  els.categoryAssignmentEmpty.hidden = state.columns.length > 0;
+  state.columns.forEach((column) => {
+    const label = document.createElement('label');
+    label.className = 'category-assignment-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = column.id;
+    checkbox.checked = selected.has(String(column.id));
+    checkbox.dataset.categoryAssignment = column.id;
+    const name = document.createElement('span');
+    name.textContent = column.name;
+    label.append(checkbox, name);
+    els.categoryAssignmentList.append(label);
+  });
+}
+
+function showCategoryPane() {
+  els.categoryPane.hidden = false;
+  els.subgroupPane.hidden = true;
+  els.categorySubmitButton.textContent = 'Save categories';
+  els.subgroupError.hidden = true;
+}
+
+function showSubgroupPane(group) {
+  if ((group.sentence_keys || []).length < 2) {
+    toast('A passage group needs at least two sentences before it can be split.', 'error');
+    return;
+  }
+  els.categoryPane.hidden = true;
+  els.subgroupPane.hidden = false;
+  els.categorySubmitButton.textContent = 'Create both subgroups';
+  els.subgroupParentName.textContent = group.name;
+  els.subgroupFirstName.value = `${group.name} — part 1`;
+  els.subgroupSecondName.value = `${group.name} — part 2`;
+  els.subgroupSentenceList.replaceChildren();
+  (group.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id, index) => {
+    const sentence = sentenceById.get(id);
+    if (!sentence) return;
+    const label = document.createElement('label');
+    label.className = 'subgroup-sentence-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = id;
+    checkbox.checked = index < Math.ceil((group.sentence_keys || []).length / 2);
+    checkbox.dataset.subgroupSentence = id;
+    const copy = document.createElement('span');
+    const ref = document.createElement('strong');
+    ref.textContent = `${sentence.chapter}:${sentence.verse}`;
+    copy.append(ref, document.createTextNode(sentence.text));
+    label.append(checkbox, copy);
+    els.subgroupSentenceList.append(label);
+  });
+  els.subgroupError.hidden = true;
+}
+
+function openCategoryDialog(groupId) {
+  const group = state.groups.find((item) => String(item.id) === String(groupId));
+  if (!group) return;
+  if (!isSubgroup(group) && isSplitGroup(group)) {
+    openSubgroupManager(group.id);
+    return;
+  }
+  state.activeCategoryGroupId = String(group.id);
+  const parent = isSubgroup(group)
+    ? state.groups.find((item) => String(item.id) === String(group.parent_group_id))
+    : null;
+  els.categoryDialogEyebrow.textContent = parent ? `Subgroup of ${parent.name}` : 'Passage-group categories';
+  els.categoryDialogTitle.textContent = group.name;
+  els.categoryDialogReference.textContent = visibleGroupReference(group);
+  els.categoryDialogCopy.textContent = 'Choose every category that applies. You can select more than one.';
+  els.startSubgroupsButton.hidden = Boolean(parent);
+  els.startSubgroupsButton.disabled = (group.sentence_keys || []).length < 2;
+  els.startSubgroupsButton.title = els.startSubgroupsButton.disabled ? 'At least two sentences are required.' : '';
+  renderCategoryAssignmentList(group);
+  showCategoryPane();
+  els.categoryDialog.showModal();
+}
+
+function openSubgroupManager(groupId) {
+  const group = state.groups.find((item) => String(item.id) === String(groupId));
+  const children = subgroupsFor(groupId);
+  if (!group || !children.length) return;
+  state.activeManagerGroupId = String(group.id);
+  els.subgroupManagerTitle.textContent = group.name;
+  els.subgroupManagerCopy.textContent = 'This passage group now gets its categories from the subgroups below. Choose a subgroup to change its categories.';
+  els.subgroupManagerList.replaceChildren();
+  children.forEach((child) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'subgroup-manager-item';
+    button.dataset.managerOpenSubgroup = child.id;
+    const copy = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = child.name;
+    const ref = document.createElement('small');
+    ref.textContent = visibleGroupReference(child);
+    copy.append(name, ref);
+    const categories = document.createElement('span');
+    categories.className = 'manager-category-summary';
+    const categoryNames = state.columns
+      .filter((column) => state.cells.has(`${child.id}:${column.id}`))
+      .map((column) => column.name);
+    categories.textContent = categoryNames.length ? categoryNames.join(', ') : 'No categories yet';
+    button.append(copy, categories);
+    els.subgroupManagerList.append(button);
+  });
+  els.subgroupManagerDialog.showModal();
+}
+
+async function saveCategoryAssignments(groupId, selectedCategoryIds) {
+  const current = categoryIdsForGroup(groupId);
+  const wanted = new Set([...selectedCategoryIds].map(String));
+  const toAdd = [...wanted].filter((id) => !current.has(id));
+  const toRemove = [...current].filter((id) => !wanted.has(id));
+  if (state.mode === 'supabase') {
+    for (const columnId of toAdd) {
+      const result = await state.supabase.from('group_category_cells').insert({ group_id: groupId, column_id: columnId, user_id: state.userId });
+      if (result.error) throw result.error;
+    }
+    for (const columnId of toRemove) {
+      const result = await state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('column_id', columnId);
+      if (result.error) throw result.error;
+    }
+  }
+  toRemove.forEach((columnId) => state.cells.delete(`${groupId}:${columnId}`));
+  toAdd.forEach((columnId) => state.cells.add(`${groupId}:${columnId}`));
+  if (state.mode === 'local') saveLocal();
+  renderMatrix();
+  renderChapter();
+}
+
+async function createSubgroups(parentId, firstName, secondName, firstSentenceIds) {
+  const parent = state.groups.find((item) => String(item.id) === String(parentId));
+  if (!parent || isSubgroup(parent) || isSplitGroup(parent)) throw new Error('This passage group cannot be split again.');
+  const parentIds = (parent.sentence_keys || []).slice().sort(compareSentenceIds);
+  const firstIds = parentIds.filter((id) => firstSentenceIds.has(id));
+  const secondIds = parentIds.filter((id) => !firstSentenceIds.has(id));
+  if (!firstName || !secondName) throw new Error('Give both subgroups a name.');
+  if (firstName === secondName) throw new Error('Use a different name for each subgroup.');
+  if (!firstIds.length || !secondIds.length) throw new Error('Select at least one sentence for each subgroup.');
+
+  const parentCategoryIds = [...categoryIdsForGroup(parent.id)];
+  let children;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('verse_groups').insert([
+      { user_id: state.userId, parent_group_id: parent.id, name: firstName, reference_text: formatReferences(firstIds), sentence_keys: firstIds },
+      { user_id: state.userId, parent_group_id: parent.id, name: secondName, reference_text: formatReferences(secondIds), sentence_keys: secondIds },
+    ]).select();
+    if (result.error) {
+      if (/parent_group_id/i.test(result.error.message || '')) throw new Error('Run the included Supabase v1.3.0 SQL update first, then try again.');
+      throw result.error;
+    }
+    children = result.data || [];
+    try {
+      const copiedCells = children.flatMap((child) => parentCategoryIds.map((columnId) => ({
+        group_id: child.id, column_id: columnId, user_id: state.userId,
+      })));
+      if (copiedCells.length) {
+        const copyResult = await state.supabase.from('group_category_cells').insert(copiedCells);
+        if (copyResult.error) throw copyResult.error;
+      }
+      if (parentCategoryIds.length) {
+        const removeResult = await state.supabase.from('group_category_cells').delete().eq('group_id', parent.id);
+        if (removeResult.error) throw removeResult.error;
+      }
+    } catch (error) {
+      await state.supabase.from('verse_groups').delete().in('id', children.map((child) => child.id));
+      throw error;
+    }
+  } else {
+    const createdAt = new Date().toISOString();
+    children = [
+      { id: localId(), user_id: 'local', parent_group_id: parent.id, name: firstName, reference_text: formatReferences(firstIds), sentence_keys: firstIds, created_at: createdAt },
+      { id: localId(), user_id: 'local', parent_group_id: parent.id, name: secondName, reference_text: formatReferences(secondIds), sentence_keys: secondIds, created_at: createdAt },
+    ];
+  }
+  state.groups.push(...children);
+  parentCategoryIds.forEach((columnId) => {
+    state.cells.delete(`${parent.id}:${columnId}`);
+    children.forEach((child) => state.cells.add(`${child.id}:${columnId}`));
+  });
+  if (state.mode === 'local') saveLocal();
+  renderMatrix();
+  renderChapter();
+  renderAccountPanel();
+  toast(`Created “${firstName}” and “${secondName}”.`);
+}
+
+async function removeSubgroups(parentId) {
+  const parent = state.groups.find((item) => String(item.id) === String(parentId));
+  const children = subgroupsFor(parentId);
+  if (!parent || children.length < 2) return;
+  if (!window.confirm(`Remove the ${children.length} subgroups under “${parent.name}”? Their categories will be combined back onto the main passage group.`)) return;
+  const combinedCategoryIds = new Set();
+  children.forEach((child) => categoryIdsForGroup(child.id).forEach((columnId) => combinedCategoryIds.add(columnId)));
+  if (state.mode === 'supabase') {
+    const missingParentCategories = [...combinedCategoryIds].filter((columnId) => !state.cells.has(`${parent.id}:${columnId}`));
+    if (missingParentCategories.length) {
+      const result = await state.supabase.from('group_category_cells').insert(missingParentCategories.map((columnId) => ({
+        group_id: parent.id, column_id: columnId, user_id: state.userId,
+      })));
+      if (result.error) throw result.error;
+    }
+    const result = await state.supabase.from('verse_groups').delete().in('id', children.map((child) => child.id));
+    if (result.error) throw result.error;
+  }
+  const childIds = new Set(children.map((child) => String(child.id)));
+  state.groups = state.groups.filter((item) => !childIds.has(String(item.id)));
+  state.cells = new Set([...state.cells].filter((key) => ![...childIds].some((id) => key.startsWith(`${id}:`))));
+  combinedCategoryIds.forEach((columnId) => state.cells.add(`${parent.id}:${columnId}`));
+  if (state.mode === 'local') saveLocal();
+  els.subgroupManagerDialog.close();
+  renderMatrix();
+  renderChapter();
+  renderAccountPanel();
+  toast('Subgroups removed. Their categories were combined on the main passage group.');
 }
 
 async function createGroup(name) {
@@ -721,6 +1031,15 @@ async function createGroup(name) {
 function editGroup(groupId) {
   const group = state.groups.find((item) => String(item.id) === String(groupId));
   if (!group) return;
+  if (isSubgroup(group)) {
+    openCategoryDialog(group.id);
+    return;
+  }
+  if (isSplitGroup(group)) {
+    openSubgroupManager(group.id);
+    toast('Remove the subgroups before changing the main passage group’s sentences.');
+    return;
+  }
   if (state.selected.size && String(state.editingGroupId) !== String(group.id)
     && !window.confirm('Replace the current sentence selection with this category’s saved sentences?')) return;
   state.editingGroupId = String(group.id);
@@ -819,13 +1138,18 @@ async function toggleCell(groupId, columnId) {
 
 async function deleteGroup(groupId) {
   const group = state.groups.find((item) => String(item.id) === String(groupId));
-  if (!group || !window.confirm(`Delete the passage group “${group.name}”?`)) return;
+  const childIds = new Set(subgroupsFor(groupId).map((child) => String(child.id)));
+  const childWarning = childIds.size ? ` and its ${childIds.size} subgroups` : '';
+  if (!group || !window.confirm(`Delete the passage group “${group.name}”${childWarning}?`)) return;
   if (state.mode === 'supabase') {
     const result = await state.supabase.from('verse_groups').delete().eq('id', groupId);
     if (result.error) throw result.error;
   }
-  state.groups = state.groups.filter((item) => String(item.id) !== String(groupId));
-  state.cells = new Set([...state.cells].filter((key) => !key.startsWith(`${groupId}:`)));
+  state.groups = state.groups.filter((item) => String(item.id) !== String(groupId) && !childIds.has(String(item.id)));
+  state.cells = new Set([...state.cells].filter((key) => {
+    const keyGroupId = key.slice(0, key.indexOf(':'));
+    return keyGroupId !== String(groupId) && !childIds.has(keyGroupId);
+  }));
   state.expanded.delete(String(groupId));
   state.hiddenGroupIds.delete(String(groupId));
   if (String(state.editingGroupId) === String(groupId)) cancelGroupEdit();
@@ -849,6 +1173,12 @@ function bindEvents() {
   els.previousChapter.addEventListener('click', () => { if (state.chapter > 1) { state.chapter -= 1; renderChapter(); } });
   els.nextChapter.addEventListener('click', () => { if (state.chapter < 28) { state.chapter += 1; renderChapter(); } });
   els.sentenceList.addEventListener('click', (event) => {
+    const groupChip = event.target.closest('[data-open-group]');
+    if (groupChip) {
+      event.stopPropagation();
+      openCategoryDialog(groupChip.dataset.openGroup);
+      return;
+    }
     const button = event.target.closest('[data-sentence-id]');
     if (!button) return;
     const id = button.dataset.sentenceId;
@@ -856,6 +1186,12 @@ function bindEvents() {
     button.classList.toggle('is-selected', state.selected.has(id));
     button.setAttribute('aria-pressed', state.selected.has(id) ? 'true' : 'false');
     updateSelectionTray();
+  });
+  els.sentenceList.addEventListener('keydown', (event) => {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-sentence-id]')) {
+      event.preventDefault();
+      event.target.click();
+    }
   });
   els.clearSelection.addEventListener('click', () => {
     if (state.editingGroupId) cancelGroupEdit();
@@ -903,15 +1239,13 @@ function bindEvents() {
       try { await toggleCell(toggle.dataset.groupId, toggle.dataset.columnId); } catch (error) { toast(error.message || 'Could not update the cell.', 'error'); }
       return;
     }
-    const summary = event.target.closest('.passage-summary');
+    const summary = event.target.closest('[data-open-group]');
     if (summary) {
-      const id = String(summary.dataset.groupId);
-      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
-      renderMatrix();
+      openCategoryDialog(summary.dataset.openGroup);
     }
   });
   els.matrixBody.addEventListener('keydown', (event) => {
-    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.passage-summary')) { event.preventDefault(); event.target.click(); }
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-open-group]')) { event.preventDefault(); event.target.click(); }
   });
   els.matrixHeadRow.addEventListener('click', async (event) => {
     const edit = event.target.closest('[data-edit-column]');
@@ -936,8 +1270,52 @@ function bindEvents() {
   });
   els.filterAll.addEventListener('click', () => { state.hiddenGroupIds.clear(); renderMatrix(); });
   els.filterNone.addEventListener('click', () => {
-    state.hiddenGroupIds = new Set(state.groups.map((group) => String(group.id)));
+    state.hiddenGroupIds = new Set(orderedGroups().map((group) => String(group.id)));
     renderMatrix();
+  });
+  els.categorySelectAll.addEventListener('click', () => {
+    $$('[data-category-assignment]').forEach((checkbox) => { checkbox.checked = true; });
+  });
+  els.categorySelectNone.addEventListener('click', () => {
+    $$('[data-category-assignment]').forEach((checkbox) => { checkbox.checked = false; });
+  });
+  els.startSubgroupsButton.addEventListener('click', () => {
+    const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
+    if (group) showSubgroupPane(group);
+  });
+  els.subgroupBackButton.addEventListener('click', showCategoryPane);
+  els.categoryForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
+    if (!group) return;
+    els.categorySubmitButton.disabled = true;
+    try {
+      if (!els.subgroupPane.hidden) {
+        const firstIds = new Set($$('[data-subgroup-sentence]:checked').map((checkbox) => checkbox.value));
+        await createSubgroups(group.id, els.subgroupFirstName.value.trim(), els.subgroupSecondName.value.trim(), firstIds);
+      } else {
+        const selectedCategoryIds = new Set($$('[data-category-assignment]:checked').map((checkbox) => checkbox.value));
+        await saveCategoryAssignments(group.id, selectedCategoryIds);
+        toast(`Updated categories for “${group.name}”.`);
+      }
+      els.categoryDialog.close();
+    } catch (error) {
+      els.subgroupError.textContent = error.message || 'Could not save these changes.';
+      els.subgroupError.hidden = false;
+      if (els.subgroupPane.hidden) toast(els.subgroupError.textContent, 'error');
+    } finally {
+      els.categorySubmitButton.disabled = false;
+    }
+  });
+  els.subgroupManagerList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-manager-open-subgroup]');
+    if (!button) return;
+    els.subgroupManagerDialog.close();
+    openCategoryDialog(button.dataset.managerOpenSubgroup);
+  });
+  els.removeSubgroupsButton.addEventListener('click', async () => {
+    try { await removeSubgroups(state.activeManagerGroupId); }
+    catch (error) { toast(error.message || 'Could not remove the subgroups.', 'error'); }
   });
   els.settingsButton.addEventListener('click', () => { renderAccountPanel(); els.settingsDialog.showModal(); });
   els.settingsForm.addEventListener('submit', async (event) => {
