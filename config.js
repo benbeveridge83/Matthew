@@ -5,11 +5,15 @@ window.MATTHEW_CONFIG = {
   supabasePublishableKey: ''
 };
 
-// Category Matrix enhancement: the arrow expands the saved passage sentences,
-// while the passage name still opens the category-assignment dialog.
+// Category Matrix enhancements.
 window.addEventListener('DOMContentLoaded', () => {
-  const script = document.createElement('script');
-  script.type = 'module';
-  script.src = `matrix-expand.js?v=1.3.1-${Date.now()}`;
-  document.body.append(script);
+  const matrixScript = document.createElement('script');
+  matrixScript.type = 'module';
+  matrixScript.src = `matrix-expand.js?v=1.3.2-${Date.now()}`;
+  document.body.append(matrixScript);
+
+  const quickAddScript = document.createElement('script');
+  quickAddScript.type = 'module';
+  quickAddScript.src = `category-quick-add.js?v=1.3.3-${Date.now()}`;
+  document.body.append(quickAddScript);
 }, { once: true });
