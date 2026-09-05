@@ -1,4 +1,4 @@
--- Matthew Verse Mapper v1.0.2
+-- Matthew Verse Mapper schema
 -- Run this entire file in the Supabase SQL Editor.
 
 create table if not exists public.verse_groups (
@@ -7,6 +7,8 @@ create table if not exists public.verse_groups (
   name text not null check (char_length(name) between 1 and 100),
   reference_text text not null,
   sentence_keys text[] not null check (cardinality(sentence_keys) > 0),
+  parent_group_id bigint,
+  completed boolean not null default false,
   created_at timestamptz not null default now(),
   unique (id, user_id)
 );
@@ -15,10 +17,28 @@ create table if not exists public.category_columns (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 80),
+  parent_column_id bigint,
   sort_order integer not null default 0 check (sort_order >= 0),
   created_at timestamptz not null default now(),
-  unique (id, user_id)
+  unique (id, user_id),
+  constraint category_columns_not_own_parent check (parent_column_id is null or parent_column_id <> id)
 );
+
+alter table public.verse_groups add column if not exists parent_group_id bigint;
+alter table public.verse_groups add column if not exists completed boolean not null default false;
+alter table public.category_columns add column if not exists parent_column_id bigint;
+
+alter table public.verse_groups drop constraint if exists verse_groups_parent_owner_fkey;
+alter table public.verse_groups add constraint verse_groups_parent_owner_fkey
+  foreign key (parent_group_id, user_id) references public.verse_groups(id, user_id) on delete cascade;
+
+alter table public.category_columns drop constraint if exists category_columns_parent_owner_fkey;
+alter table public.category_columns add constraint category_columns_parent_owner_fkey
+  foreign key (parent_column_id, user_id) references public.category_columns(id, user_id) on delete cascade;
+
+alter table public.category_columns drop constraint if exists category_columns_not_own_parent;
+alter table public.category_columns add constraint category_columns_not_own_parent
+  check (parent_column_id is null or parent_column_id <> id);
 
 create table if not exists public.group_category_cells (
   group_id bigint not null,
@@ -33,7 +53,9 @@ create table if not exists public.group_category_cells (
 );
 
 create index if not exists verse_groups_user_id_idx on public.verse_groups(user_id);
+create index if not exists verse_groups_parent_idx on public.verse_groups(user_id, parent_group_id, created_at);
 create index if not exists category_columns_user_sort_idx on public.category_columns(user_id, sort_order, created_at);
+create index if not exists category_columns_parent_idx on public.category_columns(user_id, parent_column_id, sort_order, created_at);
 create index if not exists group_category_cells_user_id_idx on public.group_category_cells(user_id);
 create index if not exists group_category_cells_column_id_idx on public.group_category_cells(column_id);
 
@@ -71,15 +93,3 @@ create policy "Users delete own matrix cells" on public.group_category_cells for
 revoke all on public.verse_groups, public.category_columns, public.group_category_cells from anon;
 grant select, insert, update, delete on public.verse_groups, public.category_columns, public.group_category_cells to authenticated;
 grant usage, select on sequence public.verse_groups_id_seq, public.category_columns_id_seq to authenticated;
-
--- Verification queries (run after the statements above):
-select tablename, rowsecurity from pg_tables
-where schemaname = 'public' and tablename in ('verse_groups', 'category_columns', 'group_category_cells')
-order by tablename;
-
-select table_name, privilege_type, grantee
-from information_schema.role_table_grants
-where table_schema = 'public'
-  and table_name in ('verse_groups', 'category_columns', 'group_category_cells')
-  and grantee in ('anon', 'authenticated')
-order by table_name, grantee, privilege_type;
