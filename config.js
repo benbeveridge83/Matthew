@@ -16,4 +16,9 @@ window.addEventListener('DOMContentLoaded', () => {
   quickAddScript.type = 'module';
   quickAddScript.src = `category-quick-add.js?v=1.3.3-${Date.now()}`;
   document.body.append(quickAddScript);
+
+  const hierarchyScript = document.createElement('script');
+  hierarchyScript.type = 'module';
+  hierarchyScript.src = `category-hierarchy.js?v=1.5.0-${Date.now()}`;
+  document.body.append(hierarchyScript);
 }, { once: true });
