@@ -1,6 +1,7 @@
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const SUPABASE_MODULE = 'https://esm.sh/@supabase/supabase-js@2.102.0';
+const ENHANCEMENT_VERSION = '1.3.2';
 
 const scripture = window.MATTHEW_DATA;
 const allSentences = scripture?.chapters?.flatMap((chapter) => chapter.verses.flatMap((verse) => verse.sentences)) || [];
@@ -67,6 +68,12 @@ function escapeId(value) {
 
 function summaryFor(groupId) {
   return document.querySelector(`#matrix-body [data-open-group="${escapeId(groupId)}"]`);
+}
+
+function detailRowFor(groupId) {
+  const wanted = String(groupId);
+  return [...document.querySelectorAll('#matrix-body tr[data-expanded-detail-for]')]
+    .find((row) => row.dataset.expandedDetailFor === wanted) || null;
 }
 
 function setArrowState(groupId, expanded) {
@@ -142,7 +149,8 @@ function makeDetail(group) {
 }
 
 function removeDetail(groupId) {
-  document.querySelectorAll(`#matrix-body tr[data-expanded-detail-for="${escapeId(groupId)}"]`).forEach((row) => row.remove());
+  const row = detailRowFor(groupId);
+  if (row) row.remove();
   setArrowState(groupId, false);
 }
 
@@ -151,7 +159,14 @@ function insertDetail(groupId) {
   const row = summary?.closest('tr');
   const group = groupById(groupId);
   if (!row || !group) return false;
-  removeDetail(groupId);
+
+  const existing = detailRowFor(groupId);
+  if (existing && existing.previousElementSibling === row) {
+    setArrowState(groupId, true);
+    return true;
+  }
+  if (existing) existing.remove();
+
   const detailRow = document.createElement('tr');
   detailRow.className = 'matrix-expanded-detail-row';
   detailRow.dataset.expandedDetailFor = String(groupId);
@@ -166,15 +181,16 @@ function insertDetail(groupId) {
 }
 
 async function toggleDetail(groupId) {
-  if (expandedGroupIds.has(String(groupId))) {
-    expandedGroupIds.delete(String(groupId));
-    removeDetail(groupId);
+  const id = String(groupId);
+  if (expandedGroupIds.has(id)) {
+    expandedGroupIds.delete(id);
+    removeDetail(id);
     return;
   }
   await refreshGroups();
-  if (!groupById(groupId)) return;
-  expandedGroupIds.add(String(groupId));
-  insertDetail(groupId);
+  if (!groupById(id)) return;
+  expandedGroupIds.add(id);
+  insertDetail(id);
 }
 
 function openExistingCategoryDialog(groupId) {
@@ -210,7 +226,7 @@ function decorateArrows() {
 function restoreExpandedRows() {
   decorateArrows();
   expandedGroupIds.forEach((groupId) => {
-    if (!document.querySelector(`#matrix-body tr[data-expanded-detail-for="${escapeId(groupId)}"]`)) insertDetail(groupId);
+    if (!detailRowFor(groupId)) insertDetail(groupId);
   });
 }
 
@@ -282,20 +298,27 @@ function install() {
     if (!groupId) return;
     event.preventDefault();
     event.stopPropagation();
+    event.stopImmediatePropagation();
     await toggleDetail(groupId);
   }, true);
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((mutations) => {
+    const changedByMainMatrix = mutations.some((mutation) => {
+      const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+      return nodes.some((node) => node.nodeType === Node.ELEMENT_NODE && !node.classList?.contains('matrix-expanded-detail-row'));
+    });
+    if (!changedByMainMatrix) return;
+
     clearTimeout(observer._restoreTimer);
     observer._restoreTimer = setTimeout(() => {
       refreshGroups().then(restoreExpandedRows).catch(() => decorateArrows());
-    }, 20);
+    }, 30);
   });
   observer.observe(matrixBody, { childList: true, subtree: false });
   decorateArrows();
 
   const footer = document.querySelector('.site-footer');
-  if (footer) footer.innerHTML = footer.innerHTML.replace('v1.3.0', 'v1.3.1');
+  if (footer) footer.innerHTML = footer.innerHTML.replace(/v1\.3\.[01]/, `v${ENHANCEMENT_VERSION}`);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
