@@ -1,4 +1,4 @@
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
@@ -21,6 +21,8 @@ const state = {
   editingColumnId: null,
   activeCategoryGroupId: null,
   activeManagerGroupId: null,
+  subgroupDrafts: [],
+  subgroupUnassignedIds: new Set(),
   groups: [],
   columns: [],
   cells: new Set(),
@@ -60,11 +62,14 @@ const els = {
   categoryAssignmentEmpty: $('#category-assignment-empty'), categorySelectAll: $('#category-select-all'),
   categorySelectNone: $('#category-select-none'), startSubgroupsButton: $('#start-subgroups-button'),
   categoryPane: $('#category-pane'), subgroupPane: $('#subgroup-pane'), subgroupParentName: $('#subgroup-parent-name'),
-  subgroupFirstName: $('#subgroup-first-name'), subgroupSecondName: $('#subgroup-second-name'),
+  subgroupName: $('#subgroup-name'), subgroupAddButton: $('#subgroup-add-button'),
+  subgroupDraftList: $('#subgroup-draft-list'), subgroupProgress: $('#subgroup-progress'),
   subgroupSentenceList: $('#subgroup-sentence-list'), subgroupError: $('#subgroup-error'),
   subgroupBackButton: $('#subgroup-back-button'), categorySubmitButton: $('#category-submit-button'),
   subgroupManagerDialog: $('#subgroup-manager-dialog'), subgroupManagerTitle: $('#subgroup-manager-title'),
   subgroupManagerCopy: $('#subgroup-manager-copy'), subgroupManagerList: $('#subgroup-manager-list'),
+  groupManagerCategoriesButton: $('#group-manager-categories-button'),
+  groupManagerSubgroupsButton: $('#group-manager-subgroups-button'), undoGroupButton: $('#undo-group-button'),
   removeSubgroupsButton: $('#remove-subgroups-button'),
 };
 
@@ -545,8 +550,8 @@ function renderChapter() {
           const chip = document.createElement('button');
           chip.type = 'button';
           chip.className = 'saved-group-chip';
-          chip.dataset.openGroup = group.id;
-          chip.setAttribute('aria-label', `Open categories for ${group.name}`);
+          chip.dataset.scriptureGroup = group.id;
+          chip.setAttribute('aria-label', isSubgroup(group) ? `Open categories for ${group.name}` : `Manage ${group.name}`);
           chip.textContent = group.name;
           savedList.append(chip);
         });
@@ -781,7 +786,89 @@ function showCategoryPane() {
   els.categoryPane.hidden = false;
   els.subgroupPane.hidden = true;
   els.categorySubmitButton.textContent = 'Save categories';
+  els.categorySubmitButton.disabled = false;
   els.subgroupError.hidden = true;
+}
+
+function updateSubgroupBuilderButtons() {
+  const selectedCount = $$('[data-subgroup-sentence]:checked').length;
+  const hasName = Boolean(els.subgroupName.value.trim());
+  els.subgroupAddButton.disabled = !selectedCount || !hasName;
+  els.categorySubmitButton.disabled = state.subgroupDrafts.length < 2 || state.subgroupUnassignedIds.size > 0;
+}
+
+function renderSubgroupBuilder(group) {
+  const parentIds = (group.sentence_keys || []).slice().sort(compareSentenceIds);
+  const assignedCount = parentIds.length - state.subgroupUnassignedIds.size;
+  els.subgroupProgress.textContent = `${assignedCount} of ${parentIds.length} sentences assigned · ${state.subgroupUnassignedIds.size} remaining`;
+
+  els.subgroupDraftList.replaceChildren();
+  state.subgroupDrafts.forEach((draft, index) => {
+    const item = document.createElement('div');
+    item.className = 'subgroup-draft-item';
+    const copy = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = draft.name;
+    const detail = document.createElement('small');
+    detail.textContent = `${formatReferences(draft.sentenceKeys)} · ${draft.sentenceKeys.length} sentence${draft.sentenceKeys.length === 1 ? '' : 's'}`;
+    copy.append(name, detail);
+    const undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'text-button danger-text compact-draft-button';
+    undo.dataset.removeSubgroupDraft = String(index);
+    undo.textContent = 'Undo';
+    item.append(copy, undo);
+    els.subgroupDraftList.append(item);
+  });
+
+  els.subgroupSentenceList.replaceChildren();
+  parentIds.filter((id) => state.subgroupUnassignedIds.has(id)).forEach((id) => {
+    const sentence = sentenceById.get(id);
+    if (!sentence) return;
+    const label = document.createElement('label');
+    label.className = 'subgroup-sentence-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = id;
+    checkbox.dataset.subgroupSentence = id;
+    const copy = document.createElement('span');
+    const ref = document.createElement('strong');
+    ref.textContent = `${sentence.chapter}:${sentence.verse}`;
+    copy.append(ref, document.createTextNode(sentence.text));
+    label.append(checkbox, copy);
+    els.subgroupSentenceList.append(label);
+  });
+
+  const nextPart = state.subgroupDrafts.length + 1;
+  els.subgroupName.value = state.subgroupUnassignedIds.size ? `${group.name} — part ${nextPart}` : '';
+  els.subgroupName.disabled = state.subgroupUnassignedIds.size === 0;
+  els.subgroupAddButton.hidden = state.subgroupUnassignedIds.size === 0;
+  updateSubgroupBuilderButtons();
+}
+
+function addSubgroupDraft(group) {
+  const name = els.subgroupName.value.trim();
+  const selectedIds = $$('[data-subgroup-sentence]:checked').map((checkbox) => checkbox.value).sort(compareSentenceIds);
+  if (!name) throw new Error('Give this subgroup a name.');
+  if (!selectedIds.length) throw new Error('Select at least one sentence for this subgroup.');
+  if (state.subgroupDrafts.some((draft) => draft.name.trim().toLowerCase() === name.toLowerCase())) {
+    throw new Error('Use a different name for each subgroup.');
+  }
+  if (!state.subgroupDrafts.length && selectedIds.length === state.subgroupUnassignedIds.size) {
+    throw new Error('Leave at least one sentence for a second subgroup.');
+  }
+  state.subgroupDrafts.push({ name, sentenceKeys: selectedIds });
+  selectedIds.forEach((id) => state.subgroupUnassignedIds.delete(id));
+  els.subgroupError.hidden = true;
+  renderSubgroupBuilder(group);
+}
+
+function removeSubgroupDraft(index, group) {
+  const [draft] = state.subgroupDrafts.splice(index, 1);
+  if (!draft) return;
+  draft.sentenceKeys.forEach((id) => state.subgroupUnassignedIds.add(id));
+  els.subgroupError.hidden = true;
+  renderSubgroupBuilder(group);
 }
 
 function showSubgroupPane(group) {
@@ -791,29 +878,12 @@ function showSubgroupPane(group) {
   }
   els.categoryPane.hidden = true;
   els.subgroupPane.hidden = false;
-  els.categorySubmitButton.textContent = 'Create both subgroups';
+  els.categorySubmitButton.textContent = 'Create subgroups';
   els.subgroupParentName.textContent = group.name;
-  els.subgroupFirstName.value = `${group.name} — part 1`;
-  els.subgroupSecondName.value = `${group.name} — part 2`;
-  els.subgroupSentenceList.replaceChildren();
-  (group.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id, index) => {
-    const sentence = sentenceById.get(id);
-    if (!sentence) return;
-    const label = document.createElement('label');
-    label.className = 'subgroup-sentence-option';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.value = id;
-    checkbox.checked = index < Math.ceil((group.sentence_keys || []).length / 2);
-    checkbox.dataset.subgroupSentence = id;
-    const copy = document.createElement('span');
-    const ref = document.createElement('strong');
-    ref.textContent = `${sentence.chapter}:${sentence.verse}`;
-    copy.append(ref, document.createTextNode(sentence.text));
-    label.append(checkbox, copy);
-    els.subgroupSentenceList.append(label);
-  });
+  state.subgroupDrafts = [];
+  state.subgroupUnassignedIds = new Set((group.sentence_keys || []).slice().sort(compareSentenceIds));
   els.subgroupError.hidden = true;
+  renderSubgroupBuilder(group);
 }
 
 function openCategoryDialog(groupId) {
@@ -842,10 +912,12 @@ function openCategoryDialog(groupId) {
 function openSubgroupManager(groupId) {
   const group = state.groups.find((item) => String(item.id) === String(groupId));
   const children = subgroupsFor(groupId);
-  if (!group || !children.length) return;
+  if (!group) return;
   state.activeManagerGroupId = String(group.id);
   els.subgroupManagerTitle.textContent = group.name;
-  els.subgroupManagerCopy.textContent = 'This passage group now gets its categories from the subgroups below. Choose a subgroup to change its categories.';
+  els.subgroupManagerCopy.textContent = children.length
+    ? 'This passage group now gets its categories from the subgroups below. Choose a subgroup to change its categories.'
+    : 'Choose what you want to do with this saved passage group.';
   els.subgroupManagerList.replaceChildren();
   children.forEach((child) => {
     const button = document.createElement('button');
@@ -867,7 +939,21 @@ function openSubgroupManager(groupId) {
     button.append(copy, categories);
     els.subgroupManagerList.append(button);
   });
+  els.groupManagerCategoriesButton.hidden = children.length > 0;
+  els.groupManagerSubgroupsButton.hidden = children.length > 0 || (group.sentence_keys || []).length < 2;
+  els.removeSubgroupsButton.hidden = children.length < 2;
+  els.undoGroupButton.hidden = false;
   els.subgroupManagerDialog.showModal();
+}
+
+function openScriptureGroup(groupId) {
+  const group = state.groups.find((item) => String(item.id) === String(groupId));
+  if (!group) return;
+  if (isSubgroup(group)) {
+    openCategoryDialog(group.id);
+    return;
+  }
+  openSubgroupManager(group.id);
 }
 
 async function saveCategoryAssignments(groupId, selectedCategoryIds) {
@@ -892,23 +978,39 @@ async function saveCategoryAssignments(groupId, selectedCategoryIds) {
   renderChapter();
 }
 
-async function createSubgroups(parentId, firstName, secondName, firstSentenceIds) {
+async function createSubgroups(parentId, drafts) {
   const parent = state.groups.find((item) => String(item.id) === String(parentId));
   if (!parent || isSubgroup(parent) || isSplitGroup(parent)) throw new Error('This passage group cannot be split again.');
   const parentIds = (parent.sentence_keys || []).slice().sort(compareSentenceIds);
-  const firstIds = parentIds.filter((id) => firstSentenceIds.has(id));
-  const secondIds = parentIds.filter((id) => !firstSentenceIds.has(id));
-  if (!firstName || !secondName) throw new Error('Give both subgroups a name.');
-  if (firstName === secondName) throw new Error('Use a different name for each subgroup.');
-  if (!firstIds.length || !secondIds.length) throw new Error('Select at least one sentence for each subgroup.');
+  const parentIdSet = new Set(parentIds);
+  const normalized = (drafts || []).map((draft) => ({
+    name: String(draft.name || '').trim(),
+    sentenceKeys: (draft.sentenceKeys || []).slice().sort(compareSentenceIds),
+  }));
+  if (normalized.length < 2) throw new Error('Create at least two subgroups.');
+  if (normalized.some((draft) => !draft.name)) throw new Error('Give every subgroup a name.');
+  const nameKeys = normalized.map((draft) => draft.name.toLowerCase());
+  if (new Set(nameKeys).size !== nameKeys.length) throw new Error('Use a different name for each subgroup.');
+  if (normalized.some((draft) => !draft.sentenceKeys.length)) throw new Error('Every subgroup needs at least one sentence.');
+
+  const assigned = normalized.flatMap((draft) => draft.sentenceKeys);
+  if (assigned.some((id) => !parentIdSet.has(id))) throw new Error('A subgroup contains a sentence outside this passage group.');
+  if (new Set(assigned).size !== assigned.length) throw new Error('Each sentence can belong to only one subgroup.');
+  if (assigned.length !== parentIds.length || parentIds.some((id) => !assigned.includes(id))) {
+    throw new Error('Assign every sentence before creating the subgroups.');
+  }
 
   const parentCategoryIds = [...categoryIdsForGroup(parent.id)];
   let children;
   if (state.mode === 'supabase') {
-    const result = await state.supabase.from('verse_groups').insert([
-      { user_id: state.userId, parent_group_id: parent.id, name: firstName, reference_text: formatReferences(firstIds), sentence_keys: firstIds },
-      { user_id: state.userId, parent_group_id: parent.id, name: secondName, reference_text: formatReferences(secondIds), sentence_keys: secondIds },
-    ]).select();
+    const rows = normalized.map((draft) => ({
+      user_id: state.userId,
+      parent_group_id: parent.id,
+      name: draft.name,
+      reference_text: formatReferences(draft.sentenceKeys),
+      sentence_keys: draft.sentenceKeys,
+    }));
+    const result = await state.supabase.from('verse_groups').insert(rows).select();
     if (result.error) {
       if (/parent_group_id/i.test(result.error.message || '')) throw new Error('Run the included Supabase v1.3.0 SQL update first, then try again.');
       throw result.error;
@@ -927,15 +1029,15 @@ async function createSubgroups(parentId, firstName, secondName, firstSentenceIds
         if (removeResult.error) throw removeResult.error;
       }
     } catch (error) {
-      await state.supabase.from('verse_groups').delete().in('id', children.map((child) => child.id));
+      if (children.length) await state.supabase.from('verse_groups').delete().in('id', children.map((child) => child.id));
       throw error;
     }
   } else {
     const createdAt = new Date().toISOString();
-    children = [
-      { id: localId(), user_id: 'local', parent_group_id: parent.id, name: firstName, reference_text: formatReferences(firstIds), sentence_keys: firstIds, created_at: createdAt },
-      { id: localId(), user_id: 'local', parent_group_id: parent.id, name: secondName, reference_text: formatReferences(secondIds), sentence_keys: secondIds, created_at: createdAt },
-    ];
+    children = normalized.map((draft) => ({
+      id: localId(), user_id: 'local', parent_group_id: parent.id, name: draft.name,
+      reference_text: formatReferences(draft.sentenceKeys), sentence_keys: draft.sentenceKeys, created_at: createdAt,
+    }));
   }
   state.groups.push(...children);
   parentCategoryIds.forEach((columnId) => {
@@ -946,7 +1048,7 @@ async function createSubgroups(parentId, firstName, secondName, firstSentenceIds
   renderMatrix();
   renderChapter();
   renderAccountPanel();
-  toast(`Created “${firstName}” and “${secondName}”.`);
+  toast(`Created ${children.length} subgroups under “${parent.name}”.`);
 }
 
 async function removeSubgroups(parentId) {
@@ -1173,10 +1275,10 @@ function bindEvents() {
   els.previousChapter.addEventListener('click', () => { if (state.chapter > 1) { state.chapter -= 1; renderChapter(); } });
   els.nextChapter.addEventListener('click', () => { if (state.chapter < 28) { state.chapter += 1; renderChapter(); } });
   els.sentenceList.addEventListener('click', (event) => {
-    const groupChip = event.target.closest('[data-open-group]');
+    const groupChip = event.target.closest('[data-scripture-group]');
     if (groupChip) {
       event.stopPropagation();
-      openCategoryDialog(groupChip.dataset.openGroup);
+      openScriptureGroup(groupChip.dataset.scriptureGroup);
       return;
     }
     const button = event.target.closest('[data-sentence-id]');
@@ -1284,6 +1386,20 @@ function bindEvents() {
     if (group) showSubgroupPane(group);
   });
   els.subgroupBackButton.addEventListener('click', showCategoryPane);
+  els.subgroupName.addEventListener('input', updateSubgroupBuilderButtons);
+  els.subgroupSentenceList.addEventListener('change', updateSubgroupBuilderButtons);
+  els.subgroupAddButton.addEventListener('click', () => {
+    const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
+    if (!group) return;
+    try { addSubgroupDraft(group); }
+    catch (error) { els.subgroupError.textContent = error.message || 'Could not add this subgroup.'; els.subgroupError.hidden = false; }
+  });
+  els.subgroupDraftList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-subgroup-draft]');
+    if (!button) return;
+    const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
+    if (group) removeSubgroupDraft(Number(button.dataset.removeSubgroupDraft), group);
+  });
   els.categoryForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
@@ -1291,8 +1407,7 @@ function bindEvents() {
     els.categorySubmitButton.disabled = true;
     try {
       if (!els.subgroupPane.hidden) {
-        const firstIds = new Set($$('[data-subgroup-sentence]:checked').map((checkbox) => checkbox.value));
-        await createSubgroups(group.id, els.subgroupFirstName.value.trim(), els.subgroupSecondName.value.trim(), firstIds);
+        await createSubgroups(group.id, state.subgroupDrafts);
       } else {
         const selectedCategoryIds = new Set($$('[data-category-assignment]:checked').map((checkbox) => checkbox.value));
         await saveCategoryAssignments(group.id, selectedCategoryIds);
@@ -1306,6 +1421,26 @@ function bindEvents() {
     } finally {
       els.categorySubmitButton.disabled = false;
     }
+  });
+  els.groupManagerCategoriesButton.addEventListener('click', () => {
+    const group = state.groups.find((item) => String(item.id) === String(state.activeManagerGroupId));
+    if (!group) return;
+    els.subgroupManagerDialog.close();
+    openCategoryDialog(group.id);
+  });
+  els.groupManagerSubgroupsButton.addEventListener('click', () => {
+    const group = state.groups.find((item) => String(item.id) === String(state.activeManagerGroupId));
+    if (!group || isSplitGroup(group)) return;
+    els.subgroupManagerDialog.close();
+    openCategoryDialog(group.id);
+    showSubgroupPane(group);
+  });
+  els.undoGroupButton.addEventListener('click', async () => {
+    const groupId = state.activeManagerGroupId;
+    try {
+      await deleteGroup(groupId);
+      if (!state.groups.some((item) => String(item.id) === String(groupId)) && els.subgroupManagerDialog.open) els.subgroupManagerDialog.close();
+    } catch (error) { toast(error.message || 'Could not undo the group.', 'error'); }
   });
   els.subgroupManagerList.addEventListener('click', (event) => {
     const button = event.target.closest('[data-manager-open-subgroup]');

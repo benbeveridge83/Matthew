@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.3.0" />
+  <link rel="stylesheet" href="styles.css?v=1.4.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -161,7 +161,7 @@
         <div class="subgroup-callout">
           <div>
             <strong>Need categories for only part of this passage?</strong>
-            <p>Split every sentence into two complete subgroups. After that, categories are assigned only to the subgroups.</p>
+            <p>Split this passage into as many complete subgroups as you need. After that, categories are assigned only to the subgroups.</p>
           </div>
           <button id="start-subgroups-button" class="secondary-button" type="button">Create subgroups</button>
         </div>
@@ -170,17 +170,23 @@
       <section id="subgroup-pane" class="subgroup-pane" hidden>
         <button id="subgroup-back-button" class="text-button back-button" type="button">← Back to categories</button>
         <div class="subgroup-instructions">
-          <strong>Split “<span id="subgroup-parent-name"></span>” into two</strong>
-          <p>Check the sentences for the first subgroup. Every unchecked sentence automatically goes into the second subgroup, so the entire passage remains covered.</p>
+          <strong>Build subgroups for “<span id="subgroup-parent-name"></span>”</strong>
+          <p>Select the sentences for one subgroup, name it, and add it. Repeat as many times as you need until every sentence is assigned. At least two subgroups are required.</p>
         </div>
         <div class="subgroup-name-grid">
-          <label for="subgroup-first-name">First subgroup name</label>
-          <input id="subgroup-first-name" maxlength="100" />
-          <label for="subgroup-second-name">Second subgroup name</label>
-          <input id="subgroup-second-name" maxlength="100" />
+          <label for="subgroup-name">Subgroup name</label>
+          <input id="subgroup-name" maxlength="100" />
         </div>
-        <p class="subgroup-list-label">Sentences in the first subgroup</p>
+        <p id="subgroup-progress" class="subgroup-progress"></p>
+        <p class="subgroup-list-label">Select sentences for this subgroup</p>
         <div id="subgroup-sentence-list" class="subgroup-sentence-list"></div>
+        <div class="subgroup-builder-actions">
+          <button id="subgroup-add-button" class="secondary-button" type="button">＋ Add this subgroup</button>
+        </div>
+        <div class="subgroup-drafts-wrap">
+          <p class="subgroup-list-label">Subgroups ready to create</p>
+          <div id="subgroup-draft-list" class="subgroup-draft-list"></div>
+        </div>
       </section>
 
       <p id="subgroup-error" class="form-error" role="alert" hidden></p>
@@ -197,8 +203,13 @@
       <p class="eyebrow">Subgroup manager</p>
       <h2 id="subgroup-manager-title">Passage group</h2>
       <p id="subgroup-manager-copy" class="dialog-copy"></p>
+      <div class="group-manager-actions">
+        <button id="group-manager-categories-button" class="secondary-button" type="button">Assign categories</button>
+        <button id="group-manager-subgroups-button" class="primary-button" type="button">Make subgroups</button>
+      </div>
       <div id="subgroup-manager-list" class="subgroup-manager-list"></div>
       <div class="dialog-actions split-manager-actions">
+        <button id="undo-group-button" class="text-button danger-text" type="button">Undo group</button>
         <button id="remove-subgroups-button" class="text-button danger-text" type="button">Remove subgroups</button>
         <button class="secondary-button" value="cancel" type="button" data-close-dialog>Close</button>
       </div>
@@ -249,9 +260,9 @@
   </dialog>
 
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.3.0 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.4.0 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
-  <script type="module" src="app.js?v=1.3.0"></script>
+  <script type="module" src="app.js?v=1.4.0"></script>
 </body>
 </html>
