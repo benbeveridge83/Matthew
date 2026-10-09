@@ -1,5 +1,6 @@
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
+const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
 const SUPABASE_MODULE = 'https://esm.sh/@supabase/supabase-js@2.102.0';
@@ -26,6 +27,12 @@ const state = {
   groups: [],
   columns: [],
   cells: new Set(),
+  ruleEntries: [],
+  ruleCategoryCells: new Set(),
+  activeRuleCategoryIds: new Set(),
+  ruleSelections: new Map(),
+  activeRuleEditorId: null,
+  speechRecognition: null,
   supabase: null,
   user: null,
   userId: null,
@@ -71,6 +78,11 @@ const els = {
   groupManagerCategoriesButton: $('#group-manager-categories-button'),
   groupManagerSubgroupsButton: $('#group-manager-subgroups-button'), undoGroupButton: $('#undo-group-button'),
   removeSubgroupsButton: $('#remove-subgroups-button'),
+  ruleCountBadge: $('#rule-count-badge'), rulesList: $('#rules-list'), rulesEmpty: $('#rules-empty'),
+  ruleEditorDialog: $('#rule-editor-dialog'), ruleEditorForm: $('#rule-editor-form'),
+  ruleEditorTitle: $('#rule-editor-title'), ruleEditorReference: $('#rule-editor-reference'),
+  ruleEditorSentences: $('#rule-editor-sentences'), ruleEditorCategories: $('#rule-editor-categories'),
+  ruleNote: $('#rule-note'), ruleVoiceButton: $('#rule-voice-button'), ruleVoiceStatus: $('#rule-voice-status'),
 };
 
 function localId() {
@@ -153,6 +165,36 @@ function aggregateCategoryState(groupId, columnId) {
   const count = children.filter((child) => state.cells.has(`${child.id}:${columnId}`)).length;
   if (!count) return 'none';
   return count === children.length ? 'all' : 'some';
+}
+
+function orderedRuleEntries() {
+  return state.ruleEntries.slice().sort((a, b) => {
+    const time = new Date(a.created_at || 0) - new Date(b.created_at || 0);
+    if (time) return time;
+    return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+  });
+}
+
+function ruleCategoryIds(ruleId) {
+  return new Set(state.columns.filter((column) => state.ruleCategoryCells.has(`${ruleId}:${column.id}`)).map((column) => String(column.id)));
+}
+
+function latestRuleForSentence(sentenceId) {
+  return orderedRuleEntries().filter((entry) => (entry.sentence_keys || []).includes(sentenceId)).at(-1) || null;
+}
+
+function loadRuleCategoryDefaults() {
+  try {
+    state.activeRuleCategoryIds = new Set((JSON.parse(localStorage.getItem(RULE_PREFS_KEY)) || []).map(String));
+  } catch {
+    state.activeRuleCategoryIds = new Set();
+  }
+}
+
+function saveRuleCategoryDefaults() {
+  const valid = [...state.activeRuleCategoryIds].filter((id) => state.columns.some((column) => String(column.id) === String(id)));
+  state.activeRuleCategoryIds = new Set(valid);
+  localStorage.setItem(RULE_PREFS_KEY, JSON.stringify(valid));
 }
 
 function isAnonymousUser(user = state.user) {
@@ -247,14 +289,18 @@ function formatReferences(ids) {
 
 function localSnapshot() {
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_KEY)) || { groups: [], columns: [], cells: [] };
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_KEY)) || {};
+    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleCategoryCells: [], ...parsed };
   } catch {
-    return { groups: [], columns: [], cells: [] };
+    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleCategoryCells: [] };
   }
 }
 
 function saveLocal() {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify({ groups: state.groups, columns: state.columns, cells: [...state.cells] }));
+  localStorage.setItem(LOCAL_KEY, JSON.stringify({
+    groups: state.groups, columns: state.columns, cells: [...state.cells],
+    ruleEntries: state.ruleEntries, ruleCategoryCells: [...state.ruleCategoryCells],
+  }));
 }
 
 function sameSentenceKeys(a = [], b = []) {
@@ -350,26 +396,34 @@ async function importLocalRecords() {
 
 async function loadRecords() {
   if (state.mode === 'supabase') {
-    const [groupsResult, columnsResult, cellsResult] = await Promise.all([
+    const [groupsResult, columnsResult, cellsResult, rulesResult, ruleCellsResult] = await Promise.all([
       state.supabase.from('verse_groups').select('*').order('created_at', { ascending: true }),
       state.supabase.from('category_columns').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
       state.supabase.from('group_category_cells').select('group_id,column_id'),
+      state.supabase.from('rule_entries').select('*').order('created_at', { ascending: true }).order('id', { ascending: true }),
+      state.supabase.from('rule_category_cells').select('rule_id,column_id'),
     ]);
-    const error = groupsResult.error || columnsResult.error || cellsResult.error;
+    const error = groupsResult.error || columnsResult.error || cellsResult.error || rulesResult.error || ruleCellsResult.error;
     if (error) throw error;
     state.groups = groupsResult.data || [];
     state.columns = columnsResult.data || [];
     state.cells = new Set((cellsResult.data || []).map((cell) => `${cell.group_id}:${cell.column_id}`));
+    state.ruleEntries = rulesResult.data || [];
+    state.ruleCategoryCells = new Set((ruleCellsResult.data || []).map((cell) => `${cell.rule_id}:${cell.column_id}`));
   } else {
     const saved = localSnapshot();
     state.groups = saved.groups || [];
     state.columns = saved.columns || [];
     state.cells = new Set(saved.cells || []);
+    state.ruleEntries = saved.ruleEntries || [];
+    state.ruleCategoryCells = new Set(saved.ruleCategoryCells || []);
   }
   const currentGroupIds = new Set(state.groups.map((group) => String(group.id)));
   state.hiddenGroupIds = new Set([...state.hiddenGroupIds].filter((id) => currentGroupIds.has(String(id))));
+  saveRuleCategoryDefaults();
   renderMatrix();
   renderChapter();
+  renderRules();
   updateSelectionTray();
   renderAccountPanel();
 }
@@ -587,22 +641,92 @@ function setView(view) {
   $$('.view').forEach((section) => section.classList.toggle('is-active', section.id === `${view}-view`));
   $$('.tab').forEach((tab) => tab.classList.toggle('is-active', tab.dataset.view === view));
   if (view === 'matrix') renderMatrix();
+  if (view === 'rules') renderRules();
   window.location.hash = view;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function makePassageDetail(group) {
   const detail = document.createElement('div');
-  detail.className = 'passage-detail';
+  detail.className = 'passage-detail rule-builder';
   detail.hidden = !state.expanded.has(String(group.id));
+  detail.dataset.ruleBuilderGroup = group.id;
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'rule-builder-toolbar';
+  const verdicts = document.createElement('div');
+  verdicts.className = 'rule-verdict-actions';
+  const ruleButton = document.createElement('button');
+  ruleButton.type = 'button';
+  ruleButton.className = 'rule-action rule-action-positive';
+  ruleButton.dataset.makeRule = group.id;
+  ruleButton.textContent = 'Rule';
+  const notRuleButton = document.createElement('button');
+  notRuleButton.type = 'button';
+  notRuleButton.className = 'rule-action rule-action-negative';
+  notRuleButton.dataset.makeNotRule = group.id;
+  notRuleButton.textContent = 'Not Rule';
+  verdicts.append(ruleButton, notRuleButton);
+
+  const selected = state.ruleSelections.get(String(group.id)) || new Set();
+  const selectionLabel = document.createElement('span');
+  selectionLabel.className = 'rule-selection-count';
+  selectionLabel.textContent = selected.size ? `${selected.size} selected` : 'Select sentence(s) below';
+  toolbar.append(verdicts, selectionLabel);
+  detail.append(toolbar);
+
+  const sticky = document.createElement('div');
+  sticky.className = 'rule-sticky-categories';
+  const stickyLabel = document.createElement('strong');
+  stickyLabel.textContent = 'Category for new rules';
+  const stickyOptions = document.createElement('div');
+  stickyOptions.className = 'rule-category-chips';
+  if (!state.columns.length) {
+    const none = document.createElement('span');
+    none.className = 'privacy-note';
+    none.textContent = 'No categories exist yet.';
+    stickyOptions.append(none);
+  } else {
+    state.columns.forEach((column) => {
+      const label = document.createElement('label');
+      label.className = `rule-category-chip${state.activeRuleCategoryIds.has(String(column.id)) ? ' is-active' : ''}`;
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.ruleDefaultCategory = column.id;
+      input.checked = state.activeRuleCategoryIds.has(String(column.id));
+      const text = document.createElement('span');
+      text.textContent = column.name;
+      label.append(input, text);
+      stickyOptions.append(label);
+    });
+  }
+  sticky.append(stickyLabel, stickyOptions);
+  detail.append(sticky);
+
   (group.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
     const sentence = sentenceById.get(id);
     if (!sentence) return;
-    const p = document.createElement('p');
-    const ref = document.createElement('span');
+    const latest = latestRuleForSentence(id);
+    const label = document.createElement('label');
+    label.className = `rule-sentence${latest?.verdict === 'rule' ? ' is-rule' : ''}${latest?.verdict === 'not_rule' ? ' is-not-rule' : ''}`;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.dataset.ruleSentence = id;
+    checkbox.dataset.ruleGroup = group.id;
+    checkbox.checked = selected.has(id);
+    const copy = document.createElement('span');
+    const ref = document.createElement('strong');
     ref.textContent = `${sentence.chapter}:${sentence.verse}`;
-    p.append(ref, document.createTextNode(sentence.text));
-    detail.append(p);
+    const text = document.createElement('span');
+    text.textContent = sentence.text;
+    copy.append(ref, text);
+    if (latest) {
+      const badge = document.createElement('em');
+      badge.textContent = latest.verdict === 'rule' ? 'Rule' : 'Not Rule';
+      copy.append(badge);
+    }
+    label.append(checkbox, copy);
+    detail.append(label);
   });
   return detail;
 }
@@ -669,6 +793,16 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
   }
   const groupActions = document.createElement('div');
   groupActions.className = 'group-actions';
+  {
+    const expand = document.createElement('button');
+    expand.type = 'button';
+    expand.className = 'edit-group';
+    expand.dataset.expandGroup = group.id;
+    expand.setAttribute('aria-label', `${state.expanded.has(String(group.id)) ? 'Collapse' : 'Expand'} sentences for ${group.name}`);
+    expand.title = 'Show sentences and mark Rule / Not Rule';
+    expand.textContent = state.expanded.has(String(group.id)) ? '▴' : '▾';
+    groupActions.append(expand);
+  }
   if (!subgroup) {
     const edit = document.createElement('button');
     edit.type = 'button';
@@ -687,7 +821,7 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
     groupActions.append(edit, remove);
   }
   summary.append(launch, labels, groupActions);
-  passageCell.append(summary);
+  passageCell.append(summary, makePassageDetail(group));
   row.append(passageCell);
 
   state.columns.forEach((column) => {
@@ -1163,6 +1297,225 @@ function cancelGroupEdit() {
   if (wasEditing) toast('Category edit cancelled.');
 }
 
+async function createRuleEntry(groupId, verdict) {
+  const selected = state.ruleSelections.get(String(groupId)) || new Set();
+  const sentenceKeys = [...selected].sort(compareSentenceIds);
+  if (!sentenceKeys.length) throw new Error('Select at least one sentence first.');
+  const group = state.groups.find((item) => String(item.id) === String(groupId));
+  const categoryIds = [...state.activeRuleCategoryIds].filter((id) => state.columns.some((column) => String(column.id) === String(id)));
+  let entry;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('rule_entries').insert({
+      user_id: state.userId, group_id: group?.id || null, verdict, sentence_keys: sentenceKeys,
+      reference_text: formatReferences(sentenceKeys), note: '',
+    }).select().single();
+    if (result.error) throw result.error;
+    entry = result.data;
+    if (categoryIds.length) {
+      const linkResult = await state.supabase.from('rule_category_cells').insert(categoryIds.map((columnId) => ({
+        rule_id: entry.id, column_id: columnId, user_id: state.userId,
+      })));
+      if (linkResult.error) {
+        await state.supabase.from('rule_entries').delete().eq('id', entry.id);
+        throw linkResult.error;
+      }
+    }
+  } else {
+    entry = { id: localId(), user_id: 'local', group_id: group?.id || null, verdict,
+      sentence_keys: sentenceKeys, reference_text: formatReferences(sentenceKeys),
+      note: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  }
+  state.ruleEntries.push(entry);
+  categoryIds.forEach((columnId) => state.ruleCategoryCells.add(`${entry.id}:${columnId}`));
+  state.ruleSelections.set(String(groupId), new Set());
+  if (state.mode === 'local') saveLocal();
+  renderMatrix();
+  renderRules();
+  openRuleEditor(entry.id);
+  toast(verdict === 'rule' ? 'Rule created.' : 'Not Rule created.');
+}
+
+function renderRules() {
+  if (!els.rulesList) return;
+  const entries = orderedRuleEntries();
+  els.ruleCountBadge.textContent = entries.length;
+  els.rulesEmpty.hidden = entries.length > 0;
+  els.rulesList.replaceChildren();
+  entries.forEach((entry, index) => {
+    const card = document.createElement('article');
+    card.className = `rule-card ${entry.verdict === 'rule' ? 'is-rule' : 'is-not-rule'}`;
+    const heading = document.createElement('div');
+    heading.className = 'rule-card-heading';
+    const order = document.createElement('span');
+    order.className = 'rule-order';
+    order.textContent = `#${index + 1}`;
+    const verdict = document.createElement('strong');
+    verdict.textContent = entry.verdict === 'rule' ? 'Rule' : 'Not Rule';
+    const ref = document.createElement('span');
+    ref.className = 'rule-card-ref';
+    ref.textContent = entry.reference_text || formatReferences(entry.sentence_keys || []);
+    heading.append(order, verdict, ref);
+
+    const body = document.createElement('div');
+    body.className = 'rule-card-sentences';
+    (entry.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
+      const sentence = sentenceById.get(id);
+      if (!sentence) return;
+      const p = document.createElement('p');
+      p.textContent = sentence.text;
+      body.append(p);
+    });
+
+    const categories = document.createElement('div');
+    categories.className = 'rule-card-categories';
+    const ids = ruleCategoryIds(entry.id);
+    state.columns.filter((column) => ids.has(String(column.id))).forEach((column) => {
+      const chip = document.createElement('span');
+      chip.textContent = column.name;
+      categories.append(chip);
+    });
+
+    const note = document.createElement('p');
+    note.className = 'rule-card-note';
+    note.textContent = entry.note ? entry.note : 'No explanation yet.';
+
+    const actions = document.createElement('div');
+    actions.className = 'rule-card-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'secondary-button compact-button';
+    edit.dataset.editRule = entry.id;
+    edit.textContent = entry.note ? 'Edit note / categories' : 'Add note / categories';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-button danger-text';
+    remove.dataset.deleteRule = entry.id;
+    remove.textContent = 'Delete';
+    actions.append(edit, remove);
+    card.append(heading, body, categories, note, actions);
+    els.rulesList.append(card);
+  });
+}
+
+function openRuleEditor(ruleId) {
+  const entry = state.ruleEntries.find((item) => String(item.id) === String(ruleId));
+  if (!entry) return;
+  state.activeRuleEditorId = String(entry.id);
+  els.ruleEditorTitle.textContent = entry.verdict === 'rule' ? 'Rule' : 'Not Rule';
+  els.ruleEditorReference.textContent = entry.reference_text || formatReferences(entry.sentence_keys || []);
+  els.ruleEditorSentences.replaceChildren();
+  (entry.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
+    const sentence = sentenceById.get(id);
+    if (!sentence) return;
+    const p = document.createElement('p');
+    p.textContent = sentence.text;
+    els.ruleEditorSentences.append(p);
+  });
+  els.ruleEditorCategories.replaceChildren();
+  const selected = ruleCategoryIds(entry.id);
+  state.columns.forEach((column) => {
+    const label = document.createElement('label');
+    label.className = 'category-assignment-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = column.id;
+    checkbox.dataset.ruleEditorCategory = column.id;
+    checkbox.checked = selected.has(String(column.id));
+    const name = document.createElement('span');
+    name.textContent = column.name;
+    label.append(checkbox, name);
+    els.ruleEditorCategories.append(label);
+  });
+  els.ruleNote.value = entry.note || '';
+  els.ruleVoiceStatus.textContent = 'Your browser will transcribe speech into the note box.';
+  els.ruleEditorDialog.showModal();
+}
+
+async function saveRuleEditor() {
+  const entry = state.ruleEntries.find((item) => String(item.id) === String(state.activeRuleEditorId));
+  if (!entry) return;
+  const wanted = new Set($('[data-rule-editor-category]:checked').map((input) => String(input.value)));
+  const current = ruleCategoryIds(entry.id);
+  const toAdd = [...wanted].filter((id) => !current.has(id));
+  const toRemove = [...current].filter((id) => !wanted.has(id));
+  const note = els.ruleNote.value.trim();
+  if (state.mode === 'supabase') {
+    const update = await state.supabase.from('rule_entries').update({ note, updated_at: new Date().toISOString() }).eq('id', entry.id).select().single();
+    if (update.error) throw update.error;
+    Object.assign(entry, update.data);
+    if (toAdd.length) {
+      const add = await state.supabase.from('rule_category_cells').insert(toAdd.map((columnId) => ({
+        rule_id: entry.id, column_id: columnId, user_id: state.userId,
+      })));
+      if (add.error) throw add.error;
+    }
+    for (const columnId of toRemove) {
+      const remove = await state.supabase.from('rule_category_cells').delete().eq('rule_id', entry.id).eq('column_id', columnId);
+      if (remove.error) throw remove.error;
+    }
+  } else {
+    entry.note = note;
+    entry.updated_at = new Date().toISOString();
+  }
+  toAdd.forEach((columnId) => state.ruleCategoryCells.add(`${entry.id}:${columnId}`));
+  toRemove.forEach((columnId) => state.ruleCategoryCells.delete(`${entry.id}:${columnId}`));
+  if (state.mode === 'local') saveLocal();
+  renderRules();
+  renderMatrix();
+}
+
+async function deleteRuleEntry(ruleId) {
+  const entry = state.ruleEntries.find((item) => String(item.id) === String(ruleId));
+  if (!entry || !window.confirm(`Delete this ${entry.verdict === 'rule' ? 'Rule' : 'Not Rule'} decision?`)) return;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('rule_entries').delete().eq('id', entry.id);
+    if (result.error) throw result.error;
+  }
+  state.ruleEntries = state.ruleEntries.filter((item) => String(item.id) !== String(entry.id));
+  state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter((key) => !key.startsWith(`${entry.id}:`)));
+  if (state.mode === 'local') saveLocal();
+  renderRules();
+  renderMatrix();
+}
+
+function startRuleDictation() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    els.ruleVoiceStatus.textContent = 'Voice transcription is not supported in this browser. You can still type the note.';
+    return;
+  }
+  if (state.speechRecognition) {
+    state.speechRecognition.stop();
+    return;
+  }
+  const recognition = new Recognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  let committed = els.ruleNote.value.trim();
+  recognition.onstart = () => {
+    state.speechRecognition = recognition;
+    els.ruleVoiceButton.textContent = '■ Stop';
+    els.ruleVoiceStatus.textContent = 'Listening…';
+  };
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const transcript = event.results[index][0].transcript;
+      if (event.results[index].isFinal) committed = `${committed}${committed ? ' ' : ''}${transcript.trim()}`;
+      else interim += transcript;
+    }
+    els.ruleNote.value = `${committed}${interim ? `${committed ? ' ' : ''}${interim}` : ''}`;
+  };
+  recognition.onerror = (event) => { els.ruleVoiceStatus.textContent = `Voice transcription stopped: ${event.error || 'error'}.`; };
+  recognition.onend = () => {
+    state.speechRecognition = null;
+    els.ruleVoiceButton.textContent = '🎙 Speak note';
+    if (!els.ruleVoiceStatus.textContent.startsWith('Voice transcription stopped')) els.ruleVoiceStatus.textContent = 'Transcription stopped.';
+  };
+  recognition.start();
+}
+
 async function createColumn(name) {
   let column;
   if (state.mode === 'supabase') {
@@ -1205,6 +1558,9 @@ async function deleteColumn(columnId) {
   }
   state.columns = state.columns.filter((item) => String(item.id) !== String(column.id));
   state.cells = new Set([...state.cells].filter((key) => !key.endsWith(`:${column.id}`)));
+  state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter((key) => !key.endsWith(`:${column.id}`)));
+  state.activeRuleCategoryIds.delete(String(column.id));
+  saveRuleCategoryDefaults();
   if (state.mode === 'local') saveLocal();
   renderMatrix();
   toast('Category column deleted.');
@@ -1328,6 +1684,15 @@ function bindEvents() {
     } catch (error) { toast(error.message || 'Could not save the column.', 'error'); }
   });
   els.matrixBody.addEventListener('click', async (event) => {
+    const expand = event.target.closest('[data-expand-group]');
+    if (expand) {
+      event.stopPropagation();
+      const id = String(expand.dataset.expandGroup);
+      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+      if (!state.ruleSelections.has(id)) state.ruleSelections.set(id, new Set());
+      renderMatrix();
+      return;
+    }
     const edit = event.target.closest('[data-edit-group]');
     if (edit) { event.stopPropagation(); editGroup(edit.dataset.editGroup); return; }
     const remove = event.target.closest('[data-delete-group]');
@@ -1345,6 +1710,33 @@ function bindEvents() {
     if (summary) {
       openCategoryDialog(summary.dataset.openGroup);
     }
+  });
+  els.matrixBody.addEventListener('change', (event) => {
+    const sentence = event.target.closest('[data-rule-sentence]');
+    if (sentence) {
+      const groupId = String(sentence.dataset.ruleGroup);
+      const selected = state.ruleSelections.get(groupId) || new Set();
+      if (sentence.checked) selected.add(sentence.dataset.ruleSentence); else selected.delete(sentence.dataset.ruleSentence);
+      state.ruleSelections.set(groupId, selected);
+      renderMatrix();
+      return;
+    }
+    const category = event.target.closest('[data-rule-default-category]');
+    if (category) {
+      const id = String(category.dataset.ruleDefaultCategory);
+      if (category.checked) state.activeRuleCategoryIds.add(id); else state.activeRuleCategoryIds.delete(id);
+      saveRuleCategoryDefaults();
+      renderMatrix();
+    }
+  });
+  els.matrixBody.addEventListener('click', async (event) => {
+    const rule = event.target.closest('[data-make-rule]');
+    const notRule = event.target.closest('[data-make-not-rule]');
+    if (!rule && !notRule) return;
+    event.stopPropagation();
+    const button = rule || notRule;
+    try { await createRuleEntry(rule ? rule.dataset.makeRule : notRule.dataset.makeNotRule, rule ? 'rule' : 'not_rule'); }
+    catch (error) { toast(error.message || 'Could not create the rule entry.', 'error'); }
   });
   els.matrixBody.addEventListener('keydown', (event) => {
     if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-open-group]')) { event.preventDefault(); event.target.click(); }
@@ -1452,6 +1844,27 @@ function bindEvents() {
     try { await removeSubgroups(state.activeManagerGroupId); }
     catch (error) { toast(error.message || 'Could not remove the subgroups.', 'error'); }
   });
+  els.rulesList.addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-edit-rule]');
+    if (edit) { openRuleEditor(edit.dataset.editRule); return; }
+    const remove = event.target.closest('[data-delete-rule]');
+    if (remove) {
+      try { await deleteRuleEntry(remove.dataset.deleteRule); } catch (error) { toast(error.message || 'Could not delete the rule entry.', 'error'); }
+    }
+  });
+  els.ruleEditorForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await saveRuleEditor();
+      els.ruleEditorDialog.close();
+      toast('Rule details saved.');
+    } catch (error) { toast(error.message || 'Could not save the rule details.', 'error'); }
+  });
+  els.ruleVoiceButton.addEventListener('click', startRuleDictation);
+  els.ruleEditorDialog.addEventListener('close', () => {
+    if (state.speechRecognition) state.speechRecognition.stop();
+    state.activeRuleEditorId = null;
+  });
   els.settingsButton.addEventListener('click', () => { renderAccountPanel(); els.settingsDialog.showModal(); });
   els.settingsForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1500,6 +1913,7 @@ function bindEvents() {
 }
 
 async function init() {
+  loadRuleCategoryDefaults();
   renderChapterControls();
   renderChapter();
   updateSelectionTray();
@@ -1507,7 +1921,7 @@ async function init() {
   bindEvents();
   await initializeConnection();
   const requestedView = location.hash.replace('#', '');
-  if (requestedView === 'matrix') setView('matrix');
+  if (requestedView === 'matrix' || requestedView === 'rules') setView(requestedView);
   console.info(`Matthew Verse Mapper v${APP_VERSION}: ${scripture.chapterCount} chapters, ${scripture.verseCount} supplied verses, ${scripture.sentenceCount} sentence blocks.`);
 }
 
