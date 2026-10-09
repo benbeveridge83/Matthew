@@ -21,6 +21,7 @@
       <nav class="tabs" aria-label="Main views">
         <button class="tab is-active" data-view="scripture" type="button">Scripture</button>
         <button class="tab" data-view="matrix" type="button">Category Matrix <span id="group-count-badge" class="count-badge">0</span></button>
+        <button class="tab" data-view="rules" type="button">Rules <span id="rule-count-badge" class="count-badge">0</span></button>
       </nav>
       <div class="header-actions">
         <span id="sync-status" class="sync-status" data-state="local"><i></i><span>Local mode</span></span>
@@ -98,6 +99,22 @@
             <tbody id="matrix-body"></tbody>
           </table>
         </div>
+      </section>
+
+      <section id="rules-view" class="view" aria-labelledby="rules-title">
+        <div class="matrix-hero">
+          <div>
+            <p class="eyebrow">Your reasoning journal</p>
+            <h1 id="rules-title">Rules & Not Rules</h1>
+            <p class="intro">Every decision appears here in the exact order you made it, with its sentences, categories, and explanation.</p>
+          </div>
+        </div>
+        <div id="rules-empty" class="empty-state" hidden>
+          <span aria-hidden="true">§</span>
+          <h2>No rule decisions yet</h2>
+          <p>Expand a passage group in the Category Matrix, select one or more sentences, and choose Rule or Not Rule.</p>
+        </div>
+        <div id="rules-list" class="rules-list"></div>
       </section>
     </main>
   </div>
@@ -216,6 +233,28 @@
     </form>
   </dialog>
 
+  <dialog id="rule-editor-dialog" class="app-dialog category-dialog">
+    <form id="rule-editor-form" method="dialog">
+      <button class="dialog-close" value="cancel" type="button" data-close-dialog aria-label="Close">×</button>
+      <p class="eyebrow">Rule journal</p>
+      <h2 id="rule-editor-title">Rule</h2>
+      <p id="rule-editor-reference" class="dialog-reference"></p>
+      <div id="rule-editor-sentences" class="rule-editor-sentences"></div>
+      <div class="category-dialog-tools"><strong>Categories</strong></div>
+      <div id="rule-editor-categories" class="category-assignment-list"></div>
+      <label for="rule-note">Rule notes</label>
+      <textarea id="rule-note" rows="7" placeholder="Explain why you made this a rule or not a rule."></textarea>
+      <div class="voice-note-row">
+        <button id="rule-voice-button" class="secondary-button" type="button">🎙 Speak note</button>
+        <span id="rule-voice-status" class="privacy-note">Your browser will transcribe speech into the note box.</span>
+      </div>
+      <div class="dialog-actions sticky-dialog-actions">
+        <button class="secondary-button" value="cancel" type="button" data-close-dialog>Cancel</button>
+        <button class="primary-button" value="default" type="submit">Save rule details</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="settings-dialog" class="app-dialog settings-dialog">
     <form id="settings-form" method="dialog">
       <button class="dialog-close" value="cancel" aria-label="Close">×</button>
@@ -260,7 +299,7 @@
   </dialog>
 
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.4.0 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.5.0 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
   <script type="module" src="app.js?v=1.4.0"></script>
