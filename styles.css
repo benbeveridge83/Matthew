@@ -314,3 +314,55 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .subgroup-draft-item { grid-template-columns: 1fr; }
   .compact-draft-button { justify-self: start; }
 }
+
+
+/* v1.5.0 rule journal */
+.rule-builder { display: grid; gap: 10px; }
+.rule-builder-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.rule-verdict-actions { display: flex; gap: 7px; }
+.rule-action { min-height: 36px; padding: 7px 13px; border-radius: 9px; border: 1px solid transparent; font-weight: 800; cursor: pointer; }
+.rule-action-positive { color: #315f39; background: #e1efdf; border-color: #b9d2b5; }
+.rule-action-negative { color: #8b342d; background: #f7e1dd; border-color: #dfb4ad; }
+.rule-selection-count { color: var(--muted) !important; font: 700 10px "DM Sans", sans-serif !important; }
+.rule-sticky-categories { padding: 10px; border-radius: 9px; background: #f0eadf; }
+.rule-sticky-categories > strong { display: block; margin-bottom: 7px; color: var(--muted); text-transform: uppercase; letter-spacing: .09em; font-size: 9px; }
+.rule-category-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-category-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #d1c5b3; border-radius: 999px; background: white; font-size: 10px; font-weight: 700; cursor: pointer; }
+.rule-category-chip.is-active { color: #315f39; border-color: #8fa88b; background: #e1efdf; }
+.rule-category-chip input { width: 14px; height: 14px; margin: 0; }
+.rule-sentence { display: grid; grid-template-columns: 20px 1fr; gap: 9px; align-items: start; padding: 10px; border: 1px solid #ded4c5; border-radius: 9px; background: white; cursor: pointer; }
+.rule-sentence input { width: 17px; height: 17px; margin-top: 3px; }
+.rule-sentence > span, .rule-sentence > span > span, .rule-sentence strong, .rule-sentence em { display: block; }
+.rule-sentence strong { color: var(--accent); font: 700 9px "DM Sans", sans-serif; margin-bottom: 3px; }
+.rule-sentence > span > span { color: var(--ink); font: 400 13px/1.55 "Libre Caslon Text", serif; }
+.rule-sentence em { width: max-content; margin-top: 6px; padding: 2px 7px; border-radius: 999px; font: 700 9px "DM Sans", sans-serif; font-style: normal; text-transform: uppercase; letter-spacing: .05em; }
+.rule-sentence.is-rule { border-color: #9fbe9a; background: #e8f3e6; }
+.rule-sentence.is-rule em { color: #315f39; background: #cfe5cb; }
+.rule-sentence.is-not-rule { border-color: #d9a59d; background: #fae8e4; }
+.rule-sentence.is-not-rule em { color: #8b342d; background: #f1cbc5; }
+.rules-list { display: grid; gap: 14px; margin-top: 28px; }
+.rule-card { border: 1px solid var(--line); border-left-width: 5px; border-radius: 12px; padding: 16px; background: var(--white); }
+.rule-card.is-rule { border-left-color: #6f9a6c; }
+.rule-card.is-not-rule { border-left-color: #b85d51; }
+.rule-card-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.rule-order { color: var(--muted); font-size: 11px; font-weight: 800; }
+.rule-card-heading strong { font: 700 18px "Libre Caslon Text", serif; }
+.rule-card-ref { color: var(--accent); font-size: 10px; font-weight: 700; }
+.rule-card-sentences { margin-top: 10px; }
+.rule-card-sentences p { margin: 0 0 6px; font: 400 14px/1.55 "Libre Caslon Text", serif; }
+.rule-card-categories { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.rule-card-categories span { padding: 3px 7px; border-radius: 999px; color: #315f39; background: #e1efdf; font-size: 9px; font-weight: 700; }
+.rule-card-note { margin: 11px 0 0; padding: 10px; border-radius: 8px; color: var(--muted); background: #f6f1e8; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.rule-card-actions { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
+.rule-editor-sentences { max-height: 180px; overflow: auto; padding: 10px; border-radius: 9px; background: #f6f1e8; }
+.rule-editor-sentences p { margin: 0 0 7px; font: 400 13px/1.5 "Libre Caslon Text", serif; }
+.rule-editor-sentences p:last-child { margin-bottom: 0; }
+#rule-note { width: 100%; resize: vertical; min-height: 140px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font: 400 14px/1.5 "DM Sans", sans-serif; }
+.voice-note-row { display: flex; align-items: center; gap: 10px; }
+.voice-note-row .privacy-note { margin: 0; }
+@media (max-width: 600px) {
+  .rule-builder-toolbar, .voice-note-row { align-items: stretch; flex-direction: column; }
+  .rule-verdict-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .rule-card-actions { align-items: stretch; flex-direction: column; }
+  .rule-card-actions button { width: 100%; }
+}
