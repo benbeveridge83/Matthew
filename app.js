@@ -1,4 +1,4 @@
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
@@ -28,6 +28,7 @@ const state = {
   columns: [],
   cells: new Set(),
   ruleEntries: [],
+  ruleColumns: [],
   ruleCategoryCells: new Set(),
   activeRuleCategoryIds: new Set(),
   ruleSelections: new Map(),
@@ -82,6 +83,9 @@ const els = {
   ruleEditorDialog: $('#rule-editor-dialog'), ruleEditorForm: $('#rule-editor-form'),
   ruleEditorTitle: $('#rule-editor-title'), ruleEditorReference: $('#rule-editor-reference'),
   ruleEditorSentences: $('#rule-editor-sentences'), ruleEditorCategories: $('#rule-editor-categories'),
+  ruleCategoryManage: $('#rule-category-manage'), ruleCategoryList: $('#rule-category-manager-list'),
+  ruleCategoryName: $('#rule-category-name'), ruleCategoryAdd: $('#rule-category-add'),
+  ruleCategoryDialog: $('#rule-categories-dialog'), ruleCategoryOpen: $('#open-rule-categories'),
   ruleNote: $('#rule-note'), ruleVoiceButton: $('#rule-voice-button'), ruleVoiceStatus: $('#rule-voice-status'),
 };
 
@@ -176,7 +180,7 @@ function orderedRuleEntries() {
 }
 
 function ruleCategoryIds(ruleId) {
-  return new Set(state.columns.filter((column) => state.ruleCategoryCells.has(`${ruleId}:${column.id}`)).map((column) => String(column.id)));
+  return new Set(state.ruleColumns.filter((column) => state.ruleCategoryCells.has(`${ruleId}:${column.id}`)).map((column) => String(column.id)));
 }
 
 function latestRuleForSentence(sentenceId) {
@@ -192,7 +196,7 @@ function loadRuleCategoryDefaults() {
 }
 
 function saveRuleCategoryDefaults() {
-  const valid = [...state.activeRuleCategoryIds].filter((id) => state.columns.some((column) => String(column.id) === String(id)));
+  const valid = [...state.activeRuleCategoryIds].filter((id) => state.ruleColumns.some((column) => String(column.id) === String(id)));
   state.activeRuleCategoryIds = new Set(valid);
   localStorage.setItem(RULE_PREFS_KEY, JSON.stringify(valid));
 }
@@ -290,16 +294,16 @@ function formatReferences(ids) {
 function localSnapshot() {
   try {
     const parsed = JSON.parse(localStorage.getItem(LOCAL_KEY)) || {};
-    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleCategoryCells: [], ...parsed };
+    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleColumns: [], ruleCategoryCells: [], ...parsed };
   } catch {
-    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleCategoryCells: [] };
+    return { groups: [], columns: [], cells: [], ruleEntries: [], ruleColumns: [], ruleCategoryCells: [] };
   }
 }
 
 function saveLocal() {
   localStorage.setItem(LOCAL_KEY, JSON.stringify({
     groups: state.groups, columns: state.columns, cells: [...state.cells],
-    ruleEntries: state.ruleEntries, ruleCategoryCells: [...state.ruleCategoryCells],
+    ruleEntries: state.ruleEntries, ruleColumns: state.ruleColumns, ruleCategoryCells: [...state.ruleCategoryCells],
   }));
 }
 
@@ -396,26 +400,29 @@ async function importLocalRecords() {
 
 async function loadRecords() {
   if (state.mode === 'supabase') {
-    const [groupsResult, columnsResult, cellsResult, rulesResult, ruleCellsResult] = await Promise.all([
+    const [groupsResult, columnsResult, cellsResult, rulesResult, ruleColumnsResult, ruleCellsResult] = await Promise.all([
       state.supabase.from('verse_groups').select('*').order('created_at', { ascending: true }),
       state.supabase.from('category_columns').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
       state.supabase.from('group_category_cells').select('group_id,column_id'),
       state.supabase.from('rule_entries').select('*').order('created_at', { ascending: true }).order('id', { ascending: true }),
-      state.supabase.from('rule_category_cells').select('rule_id,column_id'),
+      state.supabase.from('rule_category_columns').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
+      state.supabase.from('rule_category_assignments').select('rule_id,category_id'),
     ]);
-    const error = groupsResult.error || columnsResult.error || cellsResult.error || rulesResult.error || ruleCellsResult.error;
+    const error = groupsResult.error || columnsResult.error || cellsResult.error || rulesResult.error || ruleColumnsResult.error || ruleCellsResult.error;
     if (error) throw error;
     state.groups = groupsResult.data || [];
     state.columns = columnsResult.data || [];
     state.cells = new Set((cellsResult.data || []).map((cell) => `${cell.group_id}:${cell.column_id}`));
     state.ruleEntries = rulesResult.data || [];
-    state.ruleCategoryCells = new Set((ruleCellsResult.data || []).map((cell) => `${cell.rule_id}:${cell.column_id}`));
+    state.ruleColumns = ruleColumnsResult.data || [];
+    state.ruleCategoryCells = new Set((ruleCellsResult.data || []).map((cell) => `${cell.rule_id}:${cell.category_id}`));
   } else {
     const saved = localSnapshot();
     state.groups = saved.groups || [];
     state.columns = saved.columns || [];
     state.cells = new Set(saved.cells || []);
     state.ruleEntries = saved.ruleEntries || [];
+    state.ruleColumns = saved.ruleColumns || [];
     state.ruleCategoryCells = new Set(saved.ruleCategoryCells || []);
   }
   const currentGroupIds = new Set(state.groups.map((group) => String(group.id)));
@@ -681,13 +688,13 @@ function makePassageDetail(group) {
   stickyLabel.textContent = 'Category for new rules';
   const stickyOptions = document.createElement('div');
   stickyOptions.className = 'rule-category-chips';
-  if (!state.columns.length) {
+  if (!state.ruleColumns.length) {
     const none = document.createElement('span');
     none.className = 'privacy-note';
     none.textContent = 'No categories exist yet.';
     stickyOptions.append(none);
   } else {
-    state.columns.forEach((column) => {
+    state.ruleColumns.forEach((column) => {
       const label = document.createElement('label');
       label.className = `rule-category-chip${state.activeRuleCategoryIds.has(String(column.id)) ? ' is-active' : ''}`;
       const input = document.createElement('input');
@@ -700,7 +707,10 @@ function makePassageDetail(group) {
       stickyOptions.append(label);
     });
   }
-  sticky.append(stickyLabel, stickyOptions);
+  const manage = document.createElement('button');
+  manage.type = 'button'; manage.className = 'text-button rule-manage-inline';
+  manage.dataset.openRuleCategories = 'true'; manage.textContent = 'Edit rule categories';
+  sticky.append(stickyLabel, manage, stickyOptions);
   detail.append(sticky);
 
   (group.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
@@ -766,12 +776,15 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
   summary.dataset.openGroup = group.id;
   summary.setAttribute('role', 'button');
   summary.setAttribute('tabindex', '0');
+  summary.setAttribute('aria-expanded', String(state.expanded.has(String(group.id))));
   summary.setAttribute('aria-label', children.length
     ? `Manage subgroups for ${group.name}`
     : `Choose categories for ${group.name}`);
   const launch = document.createElement('span');
   launch.className = 'open-icon';
-  launch.textContent = children.length ? '▾' : '›';
+  launch.textContent = state.expanded.has(String(group.id)) ? '▾' : '›';
+  launch.dataset.expandGroup = group.id;
+  launch.setAttribute('aria-label', 'Expand or collapse section');
   const labels = document.createElement('div');
   const name = document.createElement('div');
   name.className = 'passage-name';
@@ -780,6 +793,7 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
   ref.className = 'passage-ref';
   ref.textContent = visibleGroupReference(group);
   labels.append(name, ref);
+  ref.hidden = !state.expanded.has(String(group.id));
   if (subgroup) {
     const badge = document.createElement('span');
     badge.className = 'subgroup-badge';
@@ -793,6 +807,7 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
   }
   const groupActions = document.createElement('div');
   groupActions.className = 'group-actions';
+  groupActions.hidden = !state.expanded.has(String(group.id));
   {
     const expand = document.createElement('button');
     expand.type = 'button';
@@ -821,7 +836,21 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
     groupActions.append(edit, remove);
   }
   summary.append(launch, labels, groupActions);
-  passageCell.append(summary, makePassageDetail(group));
+  if (state.expanded.has(String(group.id))) {
+    const inlineActions = document.createElement('div');
+    inlineActions.className = 'matrix-section-actions';
+    const categorize = document.createElement('button');
+    categorize.type = 'button'; categorize.className = 'secondary-button compact-button';
+    categorize.dataset.openCategoriesFor = group.id; categorize.textContent = 'Categorize section';
+    inlineActions.append(categorize);
+    if (!subgroup) {
+      const split = document.createElement('button'); split.type = 'button';
+      split.className = 'secondary-button compact-button'; split.dataset.openSubgroupsFor = group.id;
+      split.textContent = children.length ? 'Manage subsections' : 'Break into subsections';
+      inlineActions.append(split);
+    }
+    passageCell.append(summary, inlineActions, makePassageDetail(group));
+  } else passageCell.append(summary);
   row.append(passageCell);
 
   state.columns.forEach((column) => {
@@ -889,12 +918,73 @@ function renderMatrix() {
   els.matrixBody.replaceChildren();
   visibleGroups.forEach((group) => {
     els.matrixBody.append(makeMatrixRow(group));
-    subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true })));
+    if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true })));
   });
   const empty = groups.length === 0;
   els.matrixEmpty.hidden = !empty;
   els.matrixFilterEmpty.hidden = empty || visibleGroups.length > 0;
   els.matrixWrap.hidden = empty || visibleGroups.length === 0;
+}
+
+
+function openRuleCategoryManager() {
+  renderRuleCategoryManager();
+  els.ruleCategoryDialog?.showModal();
+}
+function renderRuleCategoryManager() {
+  if (!els.ruleCategoryList) return;
+  els.ruleCategoryList.replaceChildren();
+  state.ruleColumns.forEach((column) => {
+    const row = document.createElement('div');
+    row.className = 'rule-category-manager-item';
+    const label = document.createElement('strong'); label.textContent = column.name;
+    const count = document.createElement('small');
+    count.textContent = `${state.ruleEntries.filter((entry) => state.ruleCategoryCells.has(`${entry.id}:${column.id}`)).length} rules`;
+    const edit = document.createElement('button'); edit.type = 'button';
+    edit.className = 'text-button'; edit.dataset.renameRuleCategory = column.id; edit.textContent = 'Rename';
+    const remove = document.createElement('button'); remove.type = 'button';
+    remove.className = 'text-button danger-text'; remove.dataset.deleteRuleCategory = column.id; remove.textContent = 'Delete';
+    row.append(label, count, edit, remove); els.ruleCategoryList.append(row);
+  });
+}
+async function createRuleCategory(name) {
+  if (state.ruleColumns.some((column) => column.name.toLowerCase() === name.toLowerCase())) throw new Error('That rule category already exists.');
+  let column;
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('rule_category_columns').insert({user_id: state.userId, name, sort_order: state.ruleColumns.length}).select().single();
+    if (result.error) throw result.error;
+    column = result.data;
+  } else column = {id: localId(), name, sort_order: state.ruleColumns.length};
+  state.ruleColumns.push(column);
+  if (state.mode === 'local') saveLocal();
+  renderMatrix(); renderRules();
+  toast('Rule category added.');
+}
+async function renameRuleCategory(id, name) {
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('rule_category_columns').update({name}).eq('id',id);
+    if (result.error) throw result.error;
+  }
+  const column = state.ruleColumns.find((item) => String(item.id) === id);
+  if (column) column.name = name;
+  if (state.mode === 'local') saveLocal();
+  renderMatrix(); renderRules();
+}
+async function deleteRuleCategory(id) {
+  if (state.mode === 'supabase') {
+    const result = await state.supabase.from('rule_category_columns').delete().eq('id',id);
+    if (result.error) throw result.error;
+  }
+  state.ruleColumns = state.ruleColumns.filter((item) => String(item.id) !== id);
+  state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter((key) => !key.endsWith(`:${id}`)));
+  state.activeRuleCategoryIds.delete(id);
+  saveRuleCategoryDefaults();
+  if (state.mode === 'local') saveLocal();
+  renderMatrix(); renderRules();
+}
+function categorySectionCount(columnId) {
+  // A split parent's classifications are owned by its subsections, not counted twice.
+  return state.groups.filter((group) => !isSplitGroup(group) && state.cells.has(`${group.id}:${columnId}`)).length;
 }
 
 function renderCategoryAssignmentList(group) {
@@ -911,6 +1001,10 @@ function renderCategoryAssignmentList(group) {
     checkbox.dataset.categoryAssignment = column.id;
     const name = document.createElement('span');
     name.textContent = column.name;
+    const count = document.createElement('sup'); count.className = 'category-use-count';
+    count.textContent = categorySectionCount(column.id);
+    count.title = 'Number of sections using this category';
+    name.append(count);
     label.append(checkbox, name);
     els.categoryAssignmentList.append(label);
   });
@@ -1101,7 +1195,7 @@ async function saveCategoryAssignments(groupId, selectedCategoryIds) {
       if (result.error) throw result.error;
     }
     for (const columnId of toRemove) {
-      const result = await state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('column_id', columnId);
+      const result = await state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('category_id', columnId);
       if (result.error) throw result.error;
     }
   }
@@ -1302,7 +1396,7 @@ async function createRuleEntry(groupId, verdict) {
   const sentenceKeys = [...selected].sort(compareSentenceIds);
   if (!sentenceKeys.length) throw new Error('Select at least one sentence first.');
   const group = state.groups.find((item) => String(item.id) === String(groupId));
-  const categoryIds = [...state.activeRuleCategoryIds].filter((id) => state.columns.some((column) => String(column.id) === String(id)));
+  const categoryIds = [...state.activeRuleCategoryIds].filter((id) => state.ruleColumns.some((column) => String(column.id) === String(id)));
   let entry;
   if (state.mode === 'supabase') {
     const result = await state.supabase.from('rule_entries').insert({
@@ -1312,8 +1406,8 @@ async function createRuleEntry(groupId, verdict) {
     if (result.error) throw result.error;
     entry = result.data;
     if (categoryIds.length) {
-      const linkResult = await state.supabase.from('rule_category_cells').insert(categoryIds.map((columnId) => ({
-        rule_id: entry.id, column_id: columnId, user_id: state.userId,
+      const linkResult = await state.supabase.from('rule_category_assignments').insert(categoryIds.map((columnId) => ({
+        rule_id: entry.id, category_id: columnId, user_id: state.userId,
       })));
       if (linkResult.error) {
         await state.supabase.from('rule_entries').delete().eq('id', entry.id);
@@ -1369,7 +1463,7 @@ function renderRules() {
     const categories = document.createElement('div');
     categories.className = 'rule-card-categories';
     const ids = ruleCategoryIds(entry.id);
-    state.columns.filter((column) => ids.has(String(column.id))).forEach((column) => {
+    state.ruleColumns.filter((column) => ids.has(String(column.id))).forEach((column) => {
       const chip = document.createElement('span');
       chip.textContent = column.name;
       categories.append(chip);
@@ -1413,7 +1507,7 @@ function openRuleEditor(ruleId) {
   });
   els.ruleEditorCategories.replaceChildren();
   const selected = ruleCategoryIds(entry.id);
-  state.columns.forEach((column) => {
+  state.ruleColumns.forEach((column) => {
     const label = document.createElement('label');
     label.className = 'category-assignment-option';
     const checkbox = document.createElement('input');
@@ -1444,13 +1538,13 @@ async function saveRuleEditor() {
     if (update.error) throw update.error;
     Object.assign(entry, update.data);
     if (toAdd.length) {
-      const add = await state.supabase.from('rule_category_cells').insert(toAdd.map((columnId) => ({
-        rule_id: entry.id, column_id: columnId, user_id: state.userId,
+      const add = await state.supabase.from('rule_category_assignments').insert(toAdd.map((columnId) => ({
+        rule_id: entry.id, category_id: columnId, user_id: state.userId,
       })));
       if (add.error) throw add.error;
     }
     for (const columnId of toRemove) {
-      const remove = await state.supabase.from('rule_category_cells').delete().eq('rule_id', entry.id).eq('column_id', columnId);
+      const remove = await state.supabase.from('rule_category_assignments').delete().eq('rule_id', entry.id).eq('category_id', columnId);
       if (remove.error) throw remove.error;
     }
   } else {
@@ -1558,9 +1652,7 @@ async function deleteColumn(columnId) {
   }
   state.columns = state.columns.filter((item) => String(item.id) !== String(column.id));
   state.cells = new Set([...state.cells].filter((key) => !key.endsWith(`:${column.id}`)));
-  state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter((key) => !key.endsWith(`:${column.id}`)));
-  state.activeRuleCategoryIds.delete(String(column.id));
-  saveRuleCategoryDefaults();
+  // Matrix categories never affect independent rule categories.
   if (state.mode === 'local') saveLocal();
   renderMatrix();
   toast('Category column deleted.');
@@ -1584,7 +1676,7 @@ async function toggleCell(groupId, columnId) {
   const wasOn = state.cells.has(key);
   if (state.mode === 'supabase') {
     const query = wasOn
-      ? state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('column_id', columnId)
+      ? state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('category_id', columnId)
       : state.supabase.from('group_category_cells').insert({ group_id: groupId, column_id: columnId, user_id: state.userId });
     const result = await query;
     if (result.error) throw result.error;
@@ -1684,6 +1776,12 @@ function bindEvents() {
     } catch (error) { toast(error.message || 'Could not save the column.', 'error'); }
   });
   els.matrixBody.addEventListener('click', async (event) => {
+    const categoryAction = event.target.closest('[data-open-categories-for]');
+    if (categoryAction) { event.stopPropagation(); openCategoryDialog(categoryAction.dataset.openCategoriesFor); return; }
+    const subgroupAction = event.target.closest('[data-open-subgroups-for]');
+    if (subgroupAction) { event.stopPropagation(); openSubgroupManager(subgroupAction.dataset.openSubgroupsFor); return; }
+    const manageRule = event.target.closest('[data-open-rule-categories]');
+    if (manageRule) { event.stopPropagation(); openRuleCategoryManager(); return; }
     const expand = event.target.closest('[data-expand-group]');
     if (expand) {
       event.stopPropagation();
@@ -1708,7 +1806,9 @@ function bindEvents() {
     }
     const summary = event.target.closest('[data-open-group]');
     if (summary) {
-      openCategoryDialog(summary.dataset.openGroup);
+      const id = String(summary.dataset.openGroup);
+      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+      renderMatrix();
     }
   });
   els.matrixBody.addEventListener('change', (event) => {
@@ -1861,6 +1961,27 @@ function bindEvents() {
     } catch (error) { toast(error.message || 'Could not save the rule details.', 'error'); }
   });
   els.ruleVoiceButton.addEventListener('click', startRuleDictation);
+  els.ruleCategoryOpen?.addEventListener('click', openRuleCategoryManager);
+  els.ruleCategoryManage?.addEventListener('click', openRuleCategoryManager);
+  els.ruleCategoryAdd?.addEventListener('click', async () => {
+    const name = els.ruleCategoryName.value.trim();
+    if (!name) return;
+    try { await createRuleCategory(name); els.ruleCategoryName.value = ''; renderRuleCategoryManager(); }
+    catch (error) { toast(error.message || 'Could not add rule category.', 'error'); }
+  });
+  els.ruleCategoryList?.addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-rename-rule-category]');
+    const remove = event.target.closest('[data-delete-rule-category]');
+    if (!edit && !remove) return;
+    const id = String((edit || remove).dataset.renameRuleCategory || (edit || remove).dataset.deleteRuleCategory);
+    const column = state.ruleColumns.find((item) => String(item.id) === id);
+    if (!column) return;
+    try {
+      if (edit) { const name = prompt('Rename rule category', column.name)?.trim(); if (name && name !== column.name) await renameRuleCategory(id, name); }
+      else if (confirm(`Delete rule category “${column.name}”? Rules will remain, but their category assignment will be removed.`)) await deleteRuleCategory(id);
+      renderRuleCategoryManager();
+    } catch (error) { toast(error.message || 'Could not update rule category.', 'error'); }
+  });
   els.ruleEditorDialog.addEventListener('close', () => {
     if (state.speechRecognition) state.speechRecognition.stop();
     state.activeRuleEditorId = null;
