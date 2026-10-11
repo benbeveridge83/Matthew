@@ -1818,7 +1818,8 @@ function bindEvents() {
       const selected = state.ruleSelections.get(groupId) || new Set();
       if (sentence.checked) selected.add(sentence.dataset.ruleSentence); else selected.delete(sentence.dataset.ruleSentence);
       state.ruleSelections.set(groupId, selected);
-      renderMatrix();
+      const counter = sentence.closest('.rule-builder')?.querySelector('.rule-selection-count');
+      if (counter) counter.textContent = selected.size ? `${selected.size} selected` : 'Select sentence(s) below';
       return;
     }
     const category = event.target.closest('[data-rule-default-category]');
@@ -1826,7 +1827,7 @@ function bindEvents() {
       const id = String(category.dataset.ruleDefaultCategory);
       if (category.checked) state.activeRuleCategoryIds.add(id); else state.activeRuleCategoryIds.delete(id);
       saveRuleCategoryDefaults();
-      renderMatrix();
+      category.closest('.rule-category-chip')?.classList.toggle('is-active', category.checked);
     }
   });
   els.matrixBody.addEventListener('click', async (event) => {
