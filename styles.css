@@ -390,3 +390,5 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
  .matrix-section-actions { margin-left: 0; }
  .matrix-section-actions > button { flex: 1; }
 }
+
+#matrix-categories-dialog .rule-category-manager-item strong { overflow-wrap: anywhere; }
