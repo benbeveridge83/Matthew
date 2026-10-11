@@ -366,3 +366,27 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .rule-card-actions { align-items: stretch; flex-direction: column; }
   .rule-card-actions button { width: 100%; }
 }
+
+/* v1.6.0: collapsed by default, independently managed rule categories */
+.passage-detail[hidden], .rule-builder[hidden], .group-actions[hidden], .passage-ref[hidden] { display: none !important; }
+.matrix-section-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 10px 30px; }
+.matrix-section-actions .compact-button { min-height: 36px; }
+.passage-summary { cursor: pointer; }
+.passage-summary .open-icon { cursor: pointer; }
+.rule-builder-toolbar { position: sticky; top: 167px; z-index: 14; background: #faf5ec; padding: 10px 7px; border: 1px solid #dfd4c5; border-radius: 10px; box-shadow: 0 3px 12px #372a191a; }
+.rule-sticky-categories { position: relative; }
+.rule-manage-inline { float: right; font-size: 11px; }
+.category-use-count { margin-left: 5px; vertical-align: super; font: 700 10px/1 "DM Sans",sans-serif; color: #895441; }
+.rule-category-manager-panel { padding: 28px; }
+.rule-category-create { display: flex; gap: 8px; margin: 14px 0; }
+.rule-category-create input { flex: 1; min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 9px; }
+.rule-category-manager-item { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
+.rule-category-manager-item strong { margin-right: auto; }
+.rule-category-manager-item small { color: var(--muted); }
+@media(max-width: 600px) {
+ .rule-builder-toolbar { top: 189px; }
+ .rule-category-manager-panel { padding: 22px 17px; }
+ .rule-category-create { flex-direction: column; }
+ .matrix-section-actions { margin-left: 0; }
+ .matrix-section-actions > button { flex: 1; }
+}
