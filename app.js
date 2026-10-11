@@ -769,6 +769,7 @@ function renderCategoryFilter(groups = orderedGroups()) {
 function makeMatrixRow(group, { subgroup = false } = {}) {
   const row = document.createElement('tr');
   if (subgroup) row.className = 'subgroup-row';
+  if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
   const summary = document.createElement('div');
   const children = subgroup ? [] : subgroupsFor(group.id);
@@ -798,11 +799,13 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
     const badge = document.createElement('span');
     badge.className = 'subgroup-badge';
     badge.textContent = 'Subgroup';
+    badge.hidden = !state.expanded.has(String(group.id));
     labels.append(badge);
   } else if (children.length) {
     const note = document.createElement('span');
     note.className = 'derived-note';
     note.textContent = `${children.length} subgroups · categories shown below`;
+    note.hidden = !state.expanded.has(String(group.id));
     labels.append(note);
   }
   const groupActions = document.createElement('div');
@@ -986,6 +989,15 @@ async function createRuleCategory(name) {
   state.ruleColumns.push(column);
   if (state.mode === 'local') saveLocal();
   renderMatrix(); renderRules();
+  if (els.ruleEditorDialog?.open) {
+    const editorId = state.activeRuleEditorId;
+    const selected = ruleCategoryIds(editorId);
+    const label = document.createElement('label'); label.className = 'category-assignment-option';
+    const input = document.createElement('input'); input.type = 'checkbox'; input.value = column.id;
+    input.dataset.ruleEditorCategory = column.id; input.checked = selected.has(String(column.id));
+    const title = document.createElement('span'); title.textContent = column.name;
+    label.append(input,title); els.ruleEditorCategories.append(label);
+  }
   toast('Rule category added.');
 }
 async function renameRuleCategory(id, name) {
