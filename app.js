@@ -927,6 +927,34 @@ function renderMatrix() {
 }
 
 
+
+function refreshMatrixCategoryEditor() {
+  const list = $('#matrix-category-manager-list');
+  if (!list) return;
+  list.replaceChildren();
+  state.columns.forEach((column) => {
+    const row = document.createElement('div');
+    row.className = 'rule-category-manager-item';
+    const label = document.createElement('strong');
+    label.textContent = column.name;
+    const count = document.createElement('small');
+    count.textContent = categorySectionCount(column.id) + ' sections';
+    const rename = document.createElement('button');
+    rename.type = 'button'; rename.className = 'text-button';
+    rename.dataset.matrixCategoryRename = column.id; rename.textContent = 'Rename';
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'text-button danger-text';
+    remove.dataset.matrixCategoryDelete = column.id; remove.textContent = 'Delete';
+    row.append(label,count,rename,remove);
+    list.append(row);
+  });
+}
+function refreshCategoryDialogAfterEdit() {
+  const group = state.groups.find((item) => String(item.id) === String(state.activeCategoryGroupId));
+  if (group) renderCategoryAssignmentList(group);
+  refreshMatrixCategoryEditor();
+}
+
 function openRuleCategoryManager() {
   renderRuleCategoryManager();
   els.ruleCategoryDialog?.showModal();
@@ -1962,6 +1990,34 @@ function bindEvents() {
     } catch (error) { toast(error.message || 'Could not save the rule details.', 'error'); }
   });
   els.ruleVoiceButton.addEventListener('click', startRuleDictation);
+
+  $('#manage-matrix-categories')?.addEventListener('click', () => {
+    refreshMatrixCategoryEditor();
+    $('#matrix-categories-dialog').showModal();
+  });
+  $('#matrix-category-add')?.addEventListener('click', async () => {
+    const nameInput = $('#matrix-category-name');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    try { await createColumn(name); nameInput.value = ''; refreshCategoryDialogAfterEdit(); }
+    catch (error) { toast(error.message || 'Could not add category.', 'error'); }
+  });
+  $('#matrix-category-manager-list')?.addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-matrix-category-rename]');
+    const del = event.target.closest('[data-matrix-category-delete]');
+    if (!edit && !del) return;
+    const id = String(edit?.dataset.matrixCategoryRename || del?.dataset.matrixCategoryDelete);
+    const column = state.columns.find((item) => String(item.id) === id);
+    if (!column) return;
+    try {
+      if (edit) {
+        const name = prompt('Rename section category', column.name)?.trim();
+        if (name && name !== column.name) await updateColumn(id,name);
+      } else await deleteColumn(id);
+      refreshCategoryDialogAfterEdit();
+    } catch (error) { toast(error.message || 'Could not update category.', 'error'); }
+  });
+
   els.ruleCategoryOpen?.addEventListener('click', openRuleCategoryManager);
   els.ruleCategoryManage?.addEventListener('click', openRuleCategoryManager);
   els.ruleCategoryAdd?.addEventListener('click', async () => {
