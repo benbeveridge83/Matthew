@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.5.0" />
+  <link rel="stylesheet" href="styles.css?v=1.6.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -114,6 +114,7 @@
           <h2>No rule decisions yet</h2>
           <p>Expand a passage group in the Category Matrix, select one or more sentences, and choose Rule or Not Rule.</p>
         </div>
+        <button id="open-rule-categories" class="secondary-button" type="button">Manage rule categories</button>
         <div id="rules-list" class="rules-list"></div>
       </section>
     </main>
@@ -170,7 +171,7 @@
           <strong>Categories</strong>
           <span>
             <button id="category-select-all" class="text-button" type="button">Select all</button>
-            <button id="category-select-none" class="text-button" type="button">Select none</button>
+            <button id="category-select-none" class="text-button" type="button">Select none</button><button id="manage-matrix-categories" class="text-button" type="button">Edit categories</button>
           </span>
         </div>
         <p id="category-assignment-empty" class="inline-empty" hidden>No category columns exist yet. Close this window and choose <strong>New category column</strong> first.</p>
@@ -240,7 +241,7 @@
       <h2 id="rule-editor-title">Rule</h2>
       <p id="rule-editor-reference" class="dialog-reference"></p>
       <div id="rule-editor-sentences" class="rule-editor-sentences"></div>
-      <div class="category-dialog-tools"><strong>Categories</strong></div>
+      <div class="category-dialog-tools"><strong>Rule categories</strong><button id="rule-category-manage" class="text-button" type="button">Edit categories</button></div>
       <div id="rule-editor-categories" class="category-assignment-list"></div>
       <label for="rule-note">Rule notes</label>
       <textarea id="rule-note" rows="7" placeholder="Explain why you made this a rule or not a rule."></textarea>
@@ -255,6 +256,33 @@
     </form>
   </dialog>
 
+  <dialog id="matrix-categories-dialog" class="app-dialog category-dialog">
+    <div class="rule-category-manager-panel">
+      <button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button>
+      <p class="eyebrow">Category Matrix</p>
+      <h2>Edit section categories</h2>
+      <div class="rule-category-create">
+        <input id="matrix-category-name" maxlength="80" placeholder="New section category" aria-label="New section category" />
+        <button id="matrix-category-add" class="primary-button" type="button">Add</button>
+      </div>
+      <div id="matrix-category-manager-list"></div>
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Done</button></div>
+    </div>
+  </dialog>
+  <dialog id="rule-categories-dialog" class="app-dialog category-dialog">
+    <div class="rule-category-manager-panel">
+      <button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button>
+      <p class="eyebrow">Independent classifications</p>
+      <h2>Manage rule categories</h2>
+      <p class="dialog-copy">These apply only to Rules and Not Rules, not to sections in the Category Matrix.</p>
+      <div class="rule-category-create">
+        <input id="rule-category-name" maxlength="80" placeholder="New rule category name" aria-label="New rule category name" />
+        <button id="rule-category-add" class="primary-button" type="button">Add category</button>
+      </div>
+      <div id="rule-category-manager-list"></div>
+      <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">Done</button></div>
+    </div>
+  </dialog>
   <dialog id="settings-dialog" class="app-dialog settings-dialog">
     <form id="settings-form" method="dialog">
       <button class="dialog-close" value="cancel" aria-label="Close">×</button>
@@ -299,9 +327,9 @@
   </dialog>
 
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.5.0 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.6.0 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
-  <script type="module" src="app.js?v=1.5.0"></script>
+  <script type="module" src="app.js?v=1.6.0"></script>
 </body>
 </html>
