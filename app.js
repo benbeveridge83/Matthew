@@ -1,4 +1,4 @@
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
@@ -184,7 +184,36 @@ function ruleCategoryIds(ruleId) {
 }
 
 function latestRuleForSentence(sentenceId) {
-  return orderedRuleEntries().filter((entry) => (entry.sentence_keys || []).includes(sentenceId)).at(-1) || null;
+  const key = String(sentenceId);
+  return orderedRuleEntries().filter((entry) => (entry.sentence_keys || []).some((id) => String(id) === key)).at(-1) || null;
+}
+
+// Rule and Not Rule both count as classified. A sentence is counted only once
+// even when a later decision replaces an earlier one or groups overlap.
+function classifiedSentenceIds() {
+  const classified = new Set();
+  state.ruleEntries.forEach((entry) => {
+    if (entry.verdict !== 'rule' && entry.verdict !== 'not_rule') return;
+    (entry.sentence_keys || []).forEach((id) => classified.add(String(id)));
+  });
+  return classified;
+}
+
+function sentenceIdsInGroup(group) {
+  return [...new Set((group.sentence_keys || []).map(String))]
+    .filter((id) => sentenceById.has(id))
+    .sort(compareSentenceIds);
+}
+
+function groupVerseRange(group) {
+  const ids = sentenceIdsInGroup(group);
+  if (!ids.length) return visibleGroupReference(group);
+  const first = sentenceById.get(ids[0]);
+  const last = sentenceById.get(ids[ids.length - 1]);
+  if (first.chapter === last.chapter) {
+    return `Matthew ${first.chapter}:${first.verse}${first.verse === last.verse ? '' : `–${last.verse}`}`;
+  }
+  return `Matthew ${first.chapter}:${first.verse}–${last.chapter}:${last.verse}`;
 }
 
 function loadRuleCategoryDefaults() {
@@ -766,9 +795,14 @@ function renderCategoryFilter(groups = orderedGroups()) {
   });
 }
 
-function makeMatrixRow(group, { subgroup = false } = {}) {
+function makeMatrixRow(group, { subgroup = false, classifiedIds = classifiedSentenceIds() } = {}) {
   const row = document.createElement('tr');
   if (subgroup) row.className = 'subgroup-row';
+  const groupSentenceIds = sentenceIdsInGroup(group);
+  const total = groupSentenceIds.length;
+  const classified = groupSentenceIds.filter((id) => classifiedIds.has(id)).length;
+  const complete = total > 0 && classified === total;
+  if (complete) row.classList.add('is-complete');
   if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
   const summary = document.createElement('div');
@@ -792,9 +826,12 @@ function makeMatrixRow(group, { subgroup = false } = {}) {
   name.textContent = group.name;
   const ref = document.createElement('div');
   ref.className = 'passage-ref';
-  ref.textContent = visibleGroupReference(group);
-  labels.append(name, ref);
-  ref.hidden = !state.expanded.has(String(group.id));
+  ref.textContent = groupVerseRange(group);
+  const stats = document.createElement('div');
+  stats.className = 'passage-classification';
+  stats.textContent = `${total} sentence${total === 1 ? '' : 's'} · ${classified} of ${total} classified`;
+  stats.setAttribute('aria-label', `${classified} out of ${total} sentences classified as Rule or Not Rule`);
+  labels.append(name, ref, stats);
   if (subgroup) {
     const badge = document.createElement('span');
     badge.className = 'subgroup-badge';
@@ -919,9 +956,10 @@ function renderMatrix() {
     els.matrixHeadRow.append(th);
   });
   els.matrixBody.replaceChildren();
+  const classifiedIds = classifiedSentenceIds();
   visibleGroups.forEach((group) => {
-    els.matrixBody.append(makeMatrixRow(group));
-    if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true })));
+    els.matrixBody.append(makeMatrixRow(group, { classifiedIds }));
+    if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true, classifiedIds })));
   });
   const empty = groups.length === 0;
   els.matrixEmpty.hidden = !empty;
