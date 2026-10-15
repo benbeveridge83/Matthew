@@ -392,3 +392,17 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 }
 
 #matrix-categories-dialog .rule-category-manager-item strong { overflow-wrap: anywhere; }
+
+/* v1.6.1: summary progress for collapsed passage sections */
+.passage-summary > div:nth-child(2) { min-width: 0; }
+.passage-ref { margin-top: 5px; overflow-wrap: anywhere; }
+.passage-classification { margin-top: 5px; color: #6f675c; font: 700 11px/1.45 "DM Sans", sans-serif; letter-spacing: 0; }
+.matrix-table tr.is-complete.is-collapsed > td { background: #e7f3e4; }
+.matrix-table tr.is-complete.is-collapsed .passage-summary { background: #e7f3e4; }
+.matrix-table tr.is-complete.is-collapsed .passage-summary:hover { background: #d6eacf; }
+.matrix-table tr.is-complete.is-collapsed .passage-classification { color: #2f683c; }
+@media (max-width: 600px) {
+  .passage-classification { font-size: 11px; }
+  .rule-builder-toolbar { top: 8px; }
+  .rule-sentence input[type="checkbox"] { display: block; flex: 0 0 auto; accent-color: #477c48; }
+}
