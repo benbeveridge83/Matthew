@@ -261,6 +261,9 @@ function installStyles() {
 }
 
 function install() {
+  // The modern app owns expansion, rule buttons, and sentence checkboxes.
+  // Do not let this legacy enhancer intercept clicks or replace its details.
+  if (document.getElementById('rule-editor-dialog')) return;
   const matrixBody = document.querySelector('#matrix-body');
   if (!matrixBody || matrixBody.dataset.matrixExpansionInstalled) return;
   matrixBody.dataset.matrixExpansionInstalled = 'true';
