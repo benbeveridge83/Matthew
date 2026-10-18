@@ -1,7 +1,8 @@
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.2';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
 const MATRIX_SUMMARY_PREFS_KEY = 'matthew-matrix-summary-visibility-v1';
+const RULE_FILTER_KEY = 'matthew-rule-verdict-filter-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
 const SUPABASE_MODULE = 'https://esm.sh/@supabase/supabase-js@2.102.0';
@@ -34,6 +35,7 @@ const state = {
   activeRuleCategoryIds: new Set(),
   ruleSelections: new Map(),
   selectedRulesToMerge: new Set(),
+  visibleRuleVerdicts: new Set(['rule', 'not_rule', 'unsure']),
   matrixSummary: { rules: true, categories: true },
   ruleActionBusy: false,
   activeRuleEditorId: null,
@@ -84,6 +86,8 @@ const els = {
   groupManagerSubgroupsButton: $('#group-manager-subgroups-button'), undoGroupButton: $('#undo-group-button'),
   removeSubgroupsButton: $('#remove-subgroups-button'),
   ruleCountBadge: $('#rule-count-badge'), rulesList: $('#rules-list'), rulesEmpty: $('#rules-empty'),
+  rulesFilterSummary: $('#rules-filter-summary'), rulesFilterEmpty: $('#rules-filter-empty'),
+  showAllRulesButton: $('#rules-filter-all'),
   ruleEditorDialog: $('#rule-editor-dialog'), ruleEditorForm: $('#rule-editor-form'),
   ruleEditorTitle: $('#rule-editor-title'), ruleEditorReference: $('#rule-editor-reference'),
   ruleEditorSentences: $('#rule-editor-sentences'), ruleEditorCategories: $('#rule-editor-categories'),
@@ -1693,6 +1697,23 @@ async function clearSelectedSentenceMarkings(groupId, sentenceKeys) {
   }
 }
 
+function loadRuleFilterPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RULE_FILTER_KEY));
+    if (Array.isArray(raw)) {
+      state.visibleRuleVerdicts = new Set(raw.filter((value) =>
+        ['rule', 'not_rule', 'unsure'].includes(value)));
+    }
+  } catch { /* All types are shown by default. */ }
+  document.querySelectorAll('[data-rule-filter]').forEach((input) => {
+    input.checked = state.visibleRuleVerdicts.has(input.dataset.ruleFilter);
+  });
+}
+
+function ruleEntriesMatchingFilter(entries, visibleVerdicts) {
+  return entries.filter((entry) => visibleVerdicts.has(entry.verdict));
+}
+
 function updateRuleMergeControls() {
   const entries = state.ruleEntries.filter((entry) => state.selectedRulesToMerge.has(String(entry.id)));
   const count = entries.length;
@@ -1756,10 +1777,25 @@ function updateFloatingRuleToolbar() {
 function renderRules() {
   if (!els.rulesList) return;
   const entries = orderedRuleEntries();
+  const visible = ruleEntriesMatchingFilter(entries, state.visibleRuleVerdicts);
+  const totals = { rule: 0, not_rule: 0, unsure: 0 };
+  entries.forEach((entry) => {
+    if (Object.hasOwn(totals, entry.verdict)) totals[entry.verdict] += 1;
+  });
+  document.querySelectorAll('[data-rule-filter]').forEach((input) => {
+    input.checked = state.visibleRuleVerdicts.has(input.dataset.ruleFilter);
+    const count = document.querySelector(`[data-rule-filter-count="${input.dataset.ruleFilter}"]`);
+    if (count) count.textContent = String(totals[input.dataset.ruleFilter]);
+  });
+  if (els.rulesFilterSummary) els.rulesFilterSummary.textContent =
+    `Showing ${visible.length} of ${entries.length} decisions`;
+  if (els.rulesFilterEmpty) els.rulesFilterEmpty.hidden = entries.length === 0 || visible.length > 0;
   els.ruleCountBadge.textContent = entries.length;
   els.rulesEmpty.hidden = entries.length > 0;
   els.rulesList.replaceChildren();
+  els.rulesList.hidden = entries.length > 0 && visible.length === 0;
   entries.forEach((entry, index) => {
+    if (!state.visibleRuleVerdicts.has(entry.verdict)) return;
     const card = document.createElement('article');
     card.className = `rule-card is-${entry.verdict === 'not_rule' ? 'not-rule' : entry.verdict}`;
     card.dataset.ruleCardId = String(entry.id);
@@ -2308,6 +2344,20 @@ function bindEvents() {
     try { await removeSubgroups(state.activeManagerGroupId); }
     catch (error) { toast(error.message || 'Could not remove the subgroups.', 'error'); }
   });
+  document.querySelectorAll('[data-rule-filter]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const verdict = checkbox.dataset.ruleFilter;
+      if (checkbox.checked) state.visibleRuleVerdicts.add(verdict);
+      else state.visibleRuleVerdicts.delete(verdict);
+      localStorage.setItem(RULE_FILTER_KEY, JSON.stringify([...state.visibleRuleVerdicts]));
+      renderRules();
+    });
+  });
+  els.showAllRulesButton?.addEventListener('click', () => {
+    state.visibleRuleVerdicts = new Set(['rule', 'not_rule', 'unsure']);
+    localStorage.setItem(RULE_FILTER_KEY, JSON.stringify([...state.visibleRuleVerdicts]));
+    renderRules();
+  });
   els.rulesList.addEventListener('change', (event) => {
     const checkbox = event.target.closest('[data-combine-rule-id]');
     if (!checkbox) return;
@@ -2461,6 +2511,7 @@ function bindEvents() {
 async function init() {
   loadRuleCategoryDefaults();
   loadMatrixSummaryPrefs();
+  loadRuleFilterPrefs();
   renderChapterControls();
   renderChapter();
   updateSelectionTray();
