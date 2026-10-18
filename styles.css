@@ -440,3 +440,18 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 
 /* Clearing a decision restores selected sentences to NC. */
 .rule-action-clear { color:#504b45; background:#eee9df; border-color:#cfc6b7; }
+
+/* v1.7.2: Rules tab verdict filters */
+.rules-verdict-filter { margin:18px 0 8px; padding:13px 15px; border:1px solid var(--line); border-radius:12px; background:#f7f1e7; }
+.rules-verdict-filter legend { padding:0 5px; color:var(--ink); font-size:13px; font-weight:700; }
+.rules-filter-options { display:flex; flex-wrap:wrap; gap:8px; }
+.rules-filter-options label { display:inline-flex; align-items:center; gap:8px; padding:9px 12px; border:1px solid #d4c7b6; border-radius:9px; background:var(--white); cursor:pointer; font-size:12px; font-weight:700; }
+.rules-filter-options label:has(input:checked) { border-color:#9eb498; background:#e8f2e5; }
+.rules-filter-options input { width:18px; height:18px; margin:0; accent-color:#5a8857; }
+.rules-filter-options small { margin-left:4px; color:var(--muted); font-size:11px; }
+.rules-filter-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:11px; color:var(--muted); font-size:12px; }
+.rules-filter-footer button { padding:4px 7px; color:var(--accent); }
+.rules-filter-empty { margin:18px 0; padding:16px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); font-size:13px; }
+.rules-filter-empty[hidden] { display:none; }
+.rules-list[hidden] { display:none; }
+@media(max-width:600px){.rules-filter-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }.rules-filter-options label{padding:9px 6px;gap:5px;font-size:11px;}.rules-filter-options input{width:16px;height:16px;flex:0 0 auto;}}
