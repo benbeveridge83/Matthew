@@ -1,6 +1,7 @@
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
+const MATRIX_SUMMARY_PREFS_KEY = 'matthew-matrix-summary-visibility-v1';
 const CONNECTION_KEY = 'matthew-verse-mapper-supabase';
 const LOCAL_BACKUP_PREFIX = 'matthew-verse-mapper-imported-backup';
 const SUPABASE_MODULE = 'https://esm.sh/@supabase/supabase-js@2.102.0';
@@ -32,6 +33,9 @@ const state = {
   ruleCategoryCells: new Set(),
   activeRuleCategoryIds: new Set(),
   ruleSelections: new Map(),
+  selectedRulesToMerge: new Set(),
+  matrixSummary: { rules: true, categories: true },
+  ruleActionBusy: false,
   activeRuleEditorId: null,
   speechRecognition: null,
   supabase: null,
@@ -87,6 +91,8 @@ const els = {
   ruleCategoryName: $('#rule-category-name'), ruleCategoryAdd: $('#rule-category-add'),
   ruleCategoryDialog: $('#rule-categories-dialog'), ruleCategoryOpen: $('#open-rule-categories'),
   ruleNote: $('#rule-note'), ruleVoiceButton: $('#rule-voice-button'), ruleVoiceStatus: $('#rule-voice-status'),
+  splitRuleButton: $('#split-rule-button'), mergeRulesButton: $('#combine-selected-rules'),
+  mergeRulesSummary: $('#selected-rules-count'), floatingRuleToolbar: $('#floating-rule-toolbar'),
 };
 
 function localId() {
@@ -190,13 +196,55 @@ function latestRuleForSentence(sentenceId) {
 
 // Rule and Not Rule both count as classified. A sentence is counted only once
 // even when a later decision replaces an earlier one or groups overlap.
-function classifiedSentenceIds() {
-  const classified = new Set();
-  state.ruleEntries.forEach((entry) => {
-    if (entry.verdict !== 'rule' && entry.verdict !== 'not_rule') return;
-    (entry.sentence_keys || []).forEach((id) => classified.add(String(id)));
+function sentenceVerdictMap() {
+  // When a sentence has been classified again, the newest decision wins.
+  const latest = new Map();
+  orderedRuleEntries().forEach((entry) => {
+    if (!['rule', 'not_rule', 'unsure'].includes(entry.verdict)) return;
+    (entry.sentence_keys || []).forEach((id) => latest.set(String(id), entry.verdict));
   });
-  return classified;
+  return latest;
+}
+
+function classifiedSentenceIds() {
+  return new Set(sentenceVerdictMap().keys());
+}
+
+function ruleVerdictLabel(verdict) {
+  return verdict === 'rule' ? 'Rule' : verdict === 'not_rule' ? 'Not Rule' : 'Unsure';
+}
+
+function ruleActionButtons(groupId) {
+  const actions = document.createElement('div');
+  actions.className = 'rule-verdict-actions';
+  [
+    ['one', 'Rule One', 'Combine all selected sentences into one Rule'],
+    ['many', 'Rule Many', 'Make a separate Rule for every selected sentence'],
+    ['not_rule', 'Not Rule', 'Make a separate Not Rule for each selected sentence'],
+    ['unsure', 'Unsure', 'Mark selected sentences separately as Unsure'],
+  ].forEach(([action, label, title]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `rule-action rule-action-${action === 'not_rule' ? 'negative' : action === 'unsure' ? 'unsure' : 'positive'}`;
+    button.dataset.ruleAction = action;
+    button.dataset.ruleActionGroup = String(groupId);
+    button.title = title;
+    button.textContent = label;
+    actions.append(button);
+  });
+  return actions;
+}
+
+function loadMatrixSummaryPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MATRIX_SUMMARY_PREFS_KEY)) || {};
+    state.matrixSummary.rules = saved.rules !== false;
+    state.matrixSummary.categories = saved.categories !== false;
+  } catch { state.matrixSummary = { rules: true, categories: true }; }
+  ['rules', 'categories'].forEach((kind) => {
+    const checkbox = document.querySelector(`[data-matrix-summary="${kind}"]`);
+    if (checkbox) checkbox.checked = state.matrixSummary[kind];
+  });
 }
 
 function sentenceIdsInGroup(group) {
@@ -678,6 +726,7 @@ function setView(view) {
   $$('.tab').forEach((tab) => tab.classList.toggle('is-active', tab.dataset.view === view));
   if (view === 'matrix') renderMatrix();
   if (view === 'rules') renderRules();
+  requestAnimationFrame(updateFloatingRuleToolbar);
   window.location.hash = view;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -690,25 +739,11 @@ function makePassageDetail(group) {
 
   const toolbar = document.createElement('div');
   toolbar.className = 'rule-builder-toolbar';
-  const verdicts = document.createElement('div');
-  verdicts.className = 'rule-verdict-actions';
-  const ruleButton = document.createElement('button');
-  ruleButton.type = 'button';
-  ruleButton.className = 'rule-action rule-action-positive';
-  ruleButton.dataset.makeRule = group.id;
-  ruleButton.textContent = 'Rule';
-  const notRuleButton = document.createElement('button');
-  notRuleButton.type = 'button';
-  notRuleButton.className = 'rule-action rule-action-negative';
-  notRuleButton.dataset.makeNotRule = group.id;
-  notRuleButton.textContent = 'Not Rule';
-  verdicts.append(ruleButton, notRuleButton);
-
   const selected = state.ruleSelections.get(String(group.id)) || new Set();
   const selectionLabel = document.createElement('span');
   selectionLabel.className = 'rule-selection-count';
   selectionLabel.textContent = selected.size ? `${selected.size} selected` : 'Select sentence(s) below';
-  toolbar.append(verdicts, selectionLabel);
+  toolbar.append(ruleActionButtons(group.id), selectionLabel);
   detail.append(toolbar);
 
   const sticky = document.createElement('div');
@@ -747,7 +782,7 @@ function makePassageDetail(group) {
     if (!sentence) return;
     const latest = latestRuleForSentence(id);
     const label = document.createElement('label');
-    label.className = `rule-sentence${latest?.verdict === 'rule' ? ' is-rule' : ''}${latest?.verdict === 'not_rule' ? ' is-not-rule' : ''}`;
+    label.className = `rule-sentence${latest?.verdict === 'rule' ? ' is-rule' : ''}${latest?.verdict === 'not_rule' ? ' is-not-rule' : ''}${latest?.verdict === 'unsure' ? ' is-unsure' : ''}`;
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.dataset.ruleSentence = id;
@@ -761,7 +796,7 @@ function makePassageDetail(group) {
     copy.append(ref, text);
     if (latest) {
       const badge = document.createElement('em');
-      badge.textContent = latest.verdict === 'rule' ? 'Rule' : 'Not Rule';
+      badge.textContent = ruleVerdictLabel(latest.verdict);
       copy.append(badge);
     }
     label.append(checkbox, copy);
@@ -795,13 +830,18 @@ function renderCategoryFilter(groups = orderedGroups()) {
   });
 }
 
-function makeMatrixRow(group, { subgroup = false, classifiedIds = classifiedSentenceIds() } = {}) {
+function makeMatrixRow(group, { subgroup = false, verdictMap = sentenceVerdictMap() } = {}) {
   const row = document.createElement('tr');
   if (subgroup) row.className = 'subgroup-row';
   const groupSentenceIds = sentenceIdsInGroup(group);
   const total = groupSentenceIds.length;
-  const classified = groupSentenceIds.filter((id) => classifiedIds.has(id)).length;
-  const complete = total > 0 && classified === total;
+  const counts = { rule: 0, not_rule: 0, unsure: 0, nc: 0 };
+  groupSentenceIds.forEach((id) => {
+    const verdict = verdictMap.get(id);
+    if (verdict === 'rule' || verdict === 'not_rule' || verdict === 'unsure') counts[verdict] += 1;
+    else counts.nc += 1;
+  });
+  const complete = total > 0 && counts.nc === 0;
   if (complete) row.classList.add('is-complete');
   if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
@@ -827,11 +867,32 @@ function makeMatrixRow(group, { subgroup = false, classifiedIds = classifiedSent
   const ref = document.createElement('div');
   ref.className = 'passage-ref';
   ref.textContent = groupVerseRange(group);
-  const stats = document.createElement('div');
-  stats.className = 'passage-classification';
-  stats.textContent = `${total} sentence${total === 1 ? '' : 's'} · ${classified} of ${total} classified`;
-  stats.setAttribute('aria-label', `${classified} out of ${total} sentences classified as Rule or Not Rule`);
-  labels.append(name, ref, stats);
+  const sentenceCount = document.createElement('div');
+  sentenceCount.className = 'passage-sentence-total';
+  sentenceCount.textContent = `${total} sentence${total === 1 ? '' : 's'}`;
+  labels.append(name, ref, sentenceCount);
+  if (state.matrixSummary.rules) {
+    const stats = document.createElement('div');
+    stats.className = 'passage-classification';
+    stats.textContent = `${counts.rule} R | ${counts.not_rule} NR | ${counts.unsure} US | ${counts.nc} NC`;
+    stats.setAttribute('aria-label', `${counts.rule} rules, ${counts.not_rule} not rules, ${counts.unsure} unsure, ${counts.nc} not categorized`);
+    labels.append(stats);
+  }
+  if (state.matrixSummary.categories) {
+    const assigned = state.columns.filter((column) => aggregateCategoryState(group.id, column.id) !== 'none');
+    if (assigned.length) {
+      const categories = document.createElement('div');
+      categories.className = 'passage-summary-categories';
+      assigned.forEach((column) => {
+        const level = aggregateCategoryState(group.id, column.id);
+        const chip = document.createElement('span');
+        chip.className = 'passage-summary-category';
+        chip.textContent = column.name + (level === 'some' ? ' (some subgroups)' : '');
+        categories.append(chip);
+      });
+      labels.append(categories);
+    }
+  }
   if (subgroup) {
     const badge = document.createElement('span');
     badge.className = 'subgroup-badge';
@@ -956,11 +1017,12 @@ function renderMatrix() {
     els.matrixHeadRow.append(th);
   });
   els.matrixBody.replaceChildren();
-  const classifiedIds = classifiedSentenceIds();
+  const verdictMap = sentenceVerdictMap();
   visibleGroups.forEach((group) => {
-    els.matrixBody.append(makeMatrixRow(group, { classifiedIds }));
-    if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true, classifiedIds })));
+    els.matrixBody.append(makeMatrixRow(group, { verdictMap }));
+    if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true, verdictMap })));
   });
+  requestAnimationFrame(updateFloatingRuleToolbar);
   const empty = groups.length === 0;
   els.matrixEmpty.hidden = !empty;
   els.matrixFilterEmpty.hidden = empty || visibleGroups.length > 0;
@@ -1469,43 +1531,168 @@ function cancelGroupEdit() {
   if (wasEditing) toast('Category edit cancelled.');
 }
 
-async function createRuleEntry(groupId, verdict) {
+// All selected Not Rule/Unsure sentences are individual decisions by default.
+async function createRuleEntry(groupId, action) {
+  if (state.ruleActionBusy) return;
   const selected = state.ruleSelections.get(String(groupId)) || new Set();
-  const sentenceKeys = [...selected].sort(compareSentenceIds);
+  const sentenceKeys = [...selected].filter((id) => sentenceById.has(id)).sort(compareSentenceIds);
   if (!sentenceKeys.length) throw new Error('Select at least one sentence first.');
   const group = state.groups.find((item) => String(item.id) === String(groupId));
-  const categoryIds = [...state.activeRuleCategoryIds].filter((id) => state.ruleColumns.some((column) => String(column.id) === String(id)));
-  let entry;
-  if (state.mode === 'supabase') {
-    const result = await state.supabase.from('rule_entries').insert({
-      user_id: state.userId, group_id: group?.id || null, verdict, sentence_keys: sentenceKeys,
-      reference_text: formatReferences(sentenceKeys), note: '',
-    }).select().single();
-    if (result.error) throw result.error;
-    entry = result.data;
-    if (categoryIds.length) {
-      const linkResult = await state.supabase.from('rule_category_assignments').insert(categoryIds.map((columnId) => ({
-        rule_id: entry.id, category_id: columnId, user_id: state.userId,
-      })));
-      if (linkResult.error) {
-        await state.supabase.from('rule_entries').delete().eq('id', entry.id);
-        throw linkResult.error;
-      }
-    }
-  } else {
-    entry = { id: localId(), user_id: 'local', group_id: group?.id || null, verdict,
-      sentence_keys: sentenceKeys, reference_text: formatReferences(sentenceKeys),
-      note: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-  }
-  state.ruleEntries.push(entry);
-  categoryIds.forEach((columnId) => state.ruleCategoryCells.add(`${entry.id}:${columnId}`));
-  state.ruleSelections.set(String(groupId), new Set());
-  if (state.mode === 'local') saveLocal();
-  renderMatrix();
-  renderRules();
-  openRuleEditor(entry.id);
-  toast(verdict === 'rule' ? 'Rule created.' : 'Not Rule created.');
+  const verdict = action === 'not_rule' ? 'not_rule' : action === 'unsure' ? 'unsure' : 'rule';
+  const combine = action === 'one';
+  const portions = combine ? [sentenceKeys] : sentenceKeys.map((id) => [id]);
+  const categoryIds = [...state.activeRuleCategoryIds].filter((id) =>
+    state.ruleColumns.some((column) => String(column.id) === String(id)));
+  const payloads = portions.map((ids) => ({
+    user_id: state.mode === 'supabase' ? state.userId : 'local',
+    group_id: group?.id || null,
+    verdict, sentence_keys: ids, reference_text: formatReferences(ids), note: '',
+  }));
+  state.ruleActionBusy = true;
+  try {
+    const entries = await insertRuleRecords(payloads, payloads.map(() => categoryIds));
+    state.ruleEntries.push(...entries);
+    entries.forEach((entry) => categoryIds.forEach((id) => state.ruleCategoryCells.add(`${entry.id}:${id}`)));
+    state.ruleSelections.set(String(groupId), new Set());
+    if (state.mode === 'local') saveLocal();
+    renderMatrix(); renderRules();
+    if (entries.length === 1) openRuleEditor(entries[0].id);
+    toast(`${entries.length} ${ruleVerdictLabel(verdict)} ${entries.length === 1 ? 'entry' : 'entries'} created.`);
+  } finally { state.ruleActionBusy = false; }
 }
+
+// Insert first, attach categories, and clean up new rows if attachment fails.
+async function insertRuleRecords(payloads, categorySets) {
+  if (state.mode !== 'supabase') {
+    const base = Date.now();
+    return payloads.map((item, index) => ({
+      ...item, id: localId(), created_at: item.created_at || new Date(base + index).toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+  }
+  const result = await state.supabase.from('rule_entries').insert(payloads).select();
+  if (result.error) throw result.error;
+  const entries = result.data || [];
+  if (entries.length !== payloads.length) throw new Error('Not all rule records were created. Refresh before retrying.');
+  try {
+    const assignments = entries.flatMap((entry, index) =>
+      (categorySets[index] || []).map((categoryId) => ({
+        rule_id: entry.id, category_id: categoryId, user_id: state.userId,
+      })));
+    if (assignments.length) {
+      const linked = await state.supabase.from('rule_category_assignments').insert(assignments);
+      if (linked.error) throw linked.error;
+    }
+  } catch (error) {
+    const rollback = await state.supabase.from('rule_entries').delete().in('id', entries.map((entry) => entry.id));
+    if (rollback.error) throw new Error(`Rule assignment failed and cleanup also failed: ${rollback.error.message}`);
+    throw error;
+  }
+  return entries;
+}
+
+// The old entries remain until replacement records and assignments exist.
+async function replaceRuleEntries(oldEntries, payloads, categorySets) {
+  if (!oldEntries.length || !payloads.length) return;
+  const created = await insertRuleRecords(payloads, categorySets);
+  if (state.mode === 'supabase') {
+    const deleted = await state.supabase.from('rule_entries').delete()
+      .in('id', oldEntries.map((entry) => entry.id));
+    if (deleted.error) {
+      const cleanup = await state.supabase.from('rule_entries').delete().in('id', created.map((entry) => entry.id));
+      throw new Error(cleanup.error
+        ? `Could not finish replacing rules; refresh to check duplicated entries: ${deleted.error.message}`
+        : deleted.error.message);
+    }
+  }
+  const oldIds = new Set(oldEntries.map((entry) => String(entry.id)));
+  state.ruleEntries = state.ruleEntries.filter((entry) => !oldIds.has(String(entry.id))).concat(created);
+  state.ruleCategoryCells = new Set([...state.ruleCategoryCells]
+    .filter((key) => !oldEntries.some((entry) => key.startsWith(`${entry.id}:`))));
+  created.forEach((entry, index) => (categorySets[index] || [])
+    .forEach((id) => state.ruleCategoryCells.add(`${entry.id}:${id}`)));
+  state.selectedRulesToMerge.clear();
+  if (state.mode === 'local') saveLocal();
+  renderRules(); renderMatrix();
+}
+
+async function splitRuleEntry(ruleId) {
+  const entry = state.ruleEntries.find((item) => String(item.id) === String(ruleId));
+  if (!entry) return;
+  const ids = [...new Set((entry.sentence_keys || []).map(String))].sort(compareSentenceIds);
+  if (ids.length < 2) return;
+  if (!window.confirm(`Split this ${ruleVerdictLabel(entry.verdict)} into ${ids.length} separate entries? Each will retain the current note and categories.`)) return;
+  const categories = [...ruleCategoryIds(entry.id)];
+  const payloads = ids.map((id) => ({
+    user_id: state.mode === 'supabase' ? state.userId : 'local',
+    group_id: entry.group_id || null, verdict: entry.verdict,
+    sentence_keys: [id], reference_text: formatReferences([id]), note: entry.note || '',
+    ...(entry.created_at ? { created_at: entry.created_at } : {}),
+  }));
+  await replaceRuleEntries([entry], payloads, payloads.map(() => categories));
+  if (els.ruleEditorDialog.open) els.ruleEditorDialog.close();
+  toast(`Split into ${ids.length} separate ${ruleVerdictLabel(entry.verdict)} entries.`);
+}
+
+function updateRuleMergeControls() {
+  const entries = state.ruleEntries.filter((entry) => state.selectedRulesToMerge.has(String(entry.id)));
+  const count = entries.length;
+  if (els.mergeRulesSummary) els.mergeRulesSummary.textContent = `${count} selected`;
+  if (els.mergeRulesButton) {
+    els.mergeRulesButton.disabled = count < 2 || entries.some((entry) => entry.verdict !== 'rule');
+    els.mergeRulesButton.title = count > 1 && entries.some((entry) => entry.verdict !== 'rule')
+      ? 'Only Rule entries can be combined.' : 'Combine selected Rule entries into one.';
+  }
+}
+
+async function mergeSelectedRules() {
+  const entries = orderedRuleEntries().filter((entry) => state.selectedRulesToMerge.has(String(entry.id)));
+  if (entries.length < 2 || entries.some((entry) => entry.verdict !== 'rule')) {
+    throw new Error('Select at least two Rule entries (not Not Rule or Unsure) to combine.');
+  }
+  if (!window.confirm(`Combine ${entries.length} selected Rule entries into one rule?`)) return;
+  const ids = [...new Set(entries.flatMap((entry) => (entry.sentence_keys || []).map(String)))].sort(compareSentenceIds);
+  const groupIds = [...new Set(entries.map((entry) => String(entry.group_id || '')))];
+  const categories = [...new Set(entries.flatMap((entry) => [...ruleCategoryIds(entry.id)]))];
+  const notes = [...new Set(entries.map((entry) => (entry.note || '').trim()).filter(Boolean))];
+  const first = entries[0];
+  const payload = {
+    user_id: state.mode === 'supabase' ? state.userId : 'local',
+    group_id: groupIds.length === 1 && groupIds[0] ? first.group_id : null,
+    verdict: 'rule', sentence_keys: ids, reference_text: formatReferences(ids),
+    note: notes.join('\n\n'),
+    ...(first.created_at ? { created_at: first.created_at } : {}),
+  };
+  await replaceRuleEntries(entries, [payload], [categories]);
+  toast(`Combined ${entries.length} rules into one (${ids.length} sentences).`);
+}
+
+function updateFloatingRuleToolbar() {
+  const floating = els.floatingRuleToolbar;
+  if (!floating) return;
+  if (state.view !== 'matrix' || document.querySelector('dialog[open]')) {
+    floating.hidden = true;
+    return;
+  }
+  const details = [...document.querySelectorAll('#matrix-body .rule-builder:not([hidden])')];
+  const active = details.find((detail) => {
+    const box = detail.getBoundingClientRect();
+    const toolbar = detail.querySelector('.rule-builder-toolbar');
+    const top = toolbar?.getBoundingClientRect().top ?? box.top;
+    return box.top < window.innerHeight - 80 && box.bottom > 125 && top < 25;
+  });
+  if (!active) { floating.hidden = true; return; }
+  const groupId = String(active.dataset.ruleBuilderGroup);
+  if (floating.dataset.groupId !== groupId) {
+    floating.dataset.groupId = groupId;
+    floating.replaceChildren(ruleActionButtons(groupId), document.createElement('span'));
+    floating.lastElementChild.className = 'rule-selection-count';
+  }
+  const count = state.ruleSelections.get(groupId)?.size || 0;
+  floating.lastElementChild.textContent = count ? `${count} selected` : 'Select sentences';
+  floating.hidden = false;
+}
+
 
 function renderRules() {
   if (!els.rulesList) return;
@@ -1515,18 +1702,30 @@ function renderRules() {
   els.rulesList.replaceChildren();
   entries.forEach((entry, index) => {
     const card = document.createElement('article');
-    card.className = `rule-card ${entry.verdict === 'rule' ? 'is-rule' : 'is-not-rule'}`;
+    card.className = `rule-card is-${entry.verdict === 'not_rule' ? 'not-rule' : entry.verdict}`;
+    card.dataset.ruleCardId = String(entry.id);
     const heading = document.createElement('div');
     heading.className = 'rule-card-heading';
     const order = document.createElement('span');
     order.className = 'rule-order';
     order.textContent = `#${index + 1}`;
     const verdict = document.createElement('strong');
-    verdict.textContent = entry.verdict === 'rule' ? 'Rule' : 'Not Rule';
+    verdict.textContent = ruleVerdictLabel(entry.verdict);
     const ref = document.createElement('span');
     ref.className = 'rule-card-ref';
     ref.textContent = entry.reference_text || formatReferences(entry.sentence_keys || []);
     heading.append(order, verdict, ref);
+    const selectLabel = document.createElement('label');
+    selectLabel.className = 'rule-merge-select';
+    const combineCheck = document.createElement('input');
+    combineCheck.type = 'checkbox';
+    combineCheck.dataset.combineRuleId = String(entry.id);
+    combineCheck.checked = state.selectedRulesToMerge.has(String(entry.id));
+    combineCheck.disabled = entry.verdict !== 'rule';
+    const combineCopy = document.createElement('span');
+    combineCopy.textContent = 'Select to combine';
+    selectLabel.append(combineCheck, combineCopy);
+    heading.append(selectLabel);
 
     const body = document.createElement('div');
     body.className = 'rule-card-sentences';
@@ -1563,17 +1762,28 @@ function renderRules() {
     remove.className = 'text-button danger-text';
     remove.dataset.deleteRule = entry.id;
     remove.textContent = 'Delete';
-    actions.append(edit, remove);
+    actions.append(edit);
+    if ((entry.sentence_keys || []).length > 1) {
+      const split = document.createElement('button');
+      split.type = 'button';
+      split.className = 'secondary-button compact-button';
+      split.dataset.splitRule = entry.id;
+      split.textContent = 'Split into individual entries';
+      actions.append(split);
+    }
+    actions.append(remove);
     card.append(heading, body, categories, note, actions);
     els.rulesList.append(card);
   });
+  updateRuleMergeControls();
 }
 
 function openRuleEditor(ruleId) {
   const entry = state.ruleEntries.find((item) => String(item.id) === String(ruleId));
   if (!entry) return;
   state.activeRuleEditorId = String(entry.id);
-  els.ruleEditorTitle.textContent = entry.verdict === 'rule' ? 'Rule' : 'Not Rule';
+  els.ruleEditorTitle.textContent = ruleVerdictLabel(entry.verdict);
+  if (els.splitRuleButton) els.splitRuleButton.hidden = (entry.sentence_keys || []).length < 2;
   els.ruleEditorReference.textContent = entry.reference_text || formatReferences(entry.sentence_keys || []);
   els.ruleEditorSentences.replaceChildren();
   (entry.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
@@ -1898,6 +2108,7 @@ function bindEvents() {
       state.ruleSelections.set(groupId, selected);
       const counter = sentence.closest('.rule-builder')?.querySelector('.rule-selection-count');
       if (counter) counter.textContent = selected.size ? `${selected.size} selected` : 'Select sentence(s) below';
+      updateFloatingRuleToolbar();
       return;
     }
     const category = event.target.closest('[data-rule-default-category]');
@@ -1908,15 +2119,30 @@ function bindEvents() {
       category.closest('.rule-category-chip')?.classList.toggle('is-active', category.checked);
     }
   });
-  els.matrixBody.addEventListener('click', async (event) => {
-    const rule = event.target.closest('[data-make-rule]');
-    const notRule = event.target.closest('[data-make-not-rule]');
-    if (!rule && !notRule) return;
-    event.stopPropagation();
-    const button = rule || notRule;
-    try { await createRuleEntry(rule ? rule.dataset.makeRule : notRule.dataset.makeNotRule, rule ? 'rule' : 'not_rule'); }
+  async function applyRuleAction(button) {
+    if (!button) return;
+    try { await createRuleEntry(button.dataset.ruleActionGroup, button.dataset.ruleAction); }
     catch (error) { toast(error.message || 'Could not create the rule entry.', 'error'); }
+    updateFloatingRuleToolbar();
+  }
+  els.matrixBody.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-rule-action]');
+    if (!button) return;
+    event.stopPropagation();
+    applyRuleAction(button);
   });
+  els.floatingRuleToolbar?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-rule-action]');
+    if (button) applyRuleAction(button);
+  });
+  let floatingScheduled = false;
+  const scheduleFloating = () => {
+    if (floatingScheduled) return;
+    floatingScheduled = true;
+    requestAnimationFrame(() => { floatingScheduled = false; updateFloatingRuleToolbar(); });
+  };
+  window.addEventListener('scroll', scheduleFloating, { passive: true });
+  window.addEventListener('resize', scheduleFloating);
   els.matrixBody.addEventListener('keydown', (event) => {
     if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-open-group]')) { event.preventDefault(); event.target.click(); }
   });
@@ -2023,13 +2249,46 @@ function bindEvents() {
     try { await removeSubgroups(state.activeManagerGroupId); }
     catch (error) { toast(error.message || 'Could not remove the subgroups.', 'error'); }
   });
+  els.rulesList.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-combine-rule-id]');
+    if (!checkbox) return;
+    if (checkbox.checked) state.selectedRulesToMerge.add(String(checkbox.dataset.combineRuleId));
+    else state.selectedRulesToMerge.delete(String(checkbox.dataset.combineRuleId));
+    updateRuleMergeControls();
+  });
+  els.mergeRulesButton?.addEventListener('click', async () => {
+    if (els.mergeRulesButton.disabled) return;
+    els.mergeRulesButton.disabled = true;
+    try { await mergeSelectedRules(); }
+    catch (error) { toast(error.message || 'Could not combine the selected rules.', 'error'); }
+    finally { updateRuleMergeControls(); }
+  });
+  els.splitRuleButton?.addEventListener('click', async () => {
+    const ruleId = state.activeRuleEditorId;
+    if (!ruleId) return;
+    els.splitRuleButton.disabled = true;
+    try { await splitRuleEntry(ruleId); }
+    catch (error) { toast(error.message || 'Could not split this rule.', 'error'); }
+    finally { els.splitRuleButton.disabled = false; }
+  });
   els.rulesList.addEventListener('click', async (event) => {
     const edit = event.target.closest('[data-edit-rule]');
     if (edit) { openRuleEditor(edit.dataset.editRule); return; }
+    const split = event.target.closest('[data-split-rule]');
+    if (split) {
+      split.disabled = true;
+      try { await splitRuleEntry(split.dataset.splitRule); }
+      catch (error) { toast(error.message || 'Could not split the rule.', 'error'); }
+      finally { split.disabled = false; }
+      return;
+    }
     const remove = event.target.closest('[data-delete-rule]');
     if (remove) {
       try { await deleteRuleEntry(remove.dataset.deleteRule); } catch (error) { toast(error.message || 'Could not delete the rule entry.', 'error'); }
+      return;
     }
+    const card = event.target.closest('[data-rule-card-id]');
+    if (card && !event.target.closest('button, label, input')) openRuleEditor(card.dataset.ruleCardId);
   });
   els.ruleEditorForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2142,11 +2401,20 @@ function bindEvents() {
 
 async function init() {
   loadRuleCategoryDefaults();
+  loadMatrixSummaryPrefs();
   renderChapterControls();
   renderChapter();
   updateSelectionTray();
   renderAccountPanel();
   bindEvents();
+  document.querySelectorAll('[data-matrix-summary]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const kind = checkbox.dataset.matrixSummary;
+      state.matrixSummary[kind] = checkbox.checked;
+      localStorage.setItem(MATRIX_SUMMARY_PREFS_KEY, JSON.stringify(state.matrixSummary));
+      renderMatrix();
+    });
+  });
   await initializeConnection();
   const requestedView = location.hash.replace('#', '');
   if (requestedView === 'matrix' || requestedView === 'rules') setView(requestedView);
