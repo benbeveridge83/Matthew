@@ -437,3 +437,6 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
  .floating-rule-toolbar { top:6px; }
  .rule-merge-select { margin-left:0; }
 }
+
+/* Clearing a decision restores selected sentences to NC. */
+.rule-action-clear { color:#504b45; background:#eee9df; border-color:#cfc6b7; }
