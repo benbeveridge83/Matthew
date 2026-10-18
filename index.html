@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Text:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.7.1" />
+  <link rel="stylesheet" href="styles.css?v=1.7.2" />
 </head>
 <body>
   <div class="page-shell">
@@ -120,6 +120,16 @@
           <p>Expand a passage group in the Category Matrix, select one or more sentences, and choose Rule or Not Rule.</p>
         </div>
         <button id="open-rule-categories" class="secondary-button" type="button">Manage rule categories</button>
+        <fieldset class="rules-verdict-filter" aria-label="Filter rule decisions">
+          <legend>Show decisions</legend>
+          <div class="rules-filter-options">
+            <label><input type="checkbox" data-rule-filter="rule" checked /><span>Rules <small data-rule-filter-count="rule">0</small></span></label>
+            <label><input type="checkbox" data-rule-filter="not_rule" checked /><span>Not Rules <small data-rule-filter-count="not_rule">0</small></span></label>
+            <label><input type="checkbox" data-rule-filter="unsure" checked /><span>Unsure <small data-rule-filter-count="unsure">0</small></span></label>
+          </div>
+          <div class="rules-filter-footer"><span id="rules-filter-summary" aria-live="polite">Showing all decisions</span><button id="rules-filter-all" class="text-button" type="button">Show all</button></div>
+        </fieldset>
+        <p id="rules-filter-empty" class="rules-filter-empty" hidden>No decisions match the selected filters. Choose another type or tap Show all.</p>
         <div class="rule-merge-controls"><button id="combine-selected-rules" class="secondary-button" type="button" disabled>Combine selected Rules</button><span id="selected-rules-count">0 selected</span></div>
         <div id="rules-list" class="rules-list"></div>
       </section>
@@ -335,9 +345,9 @@
 
   <div id="floating-rule-toolbar" class="floating-rule-toolbar" hidden aria-label="Rule classification controls"></div>
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.7.1 · 28 chapters · 1,067 supplied verses</span></footer>
+  <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.7.2 · 28 chapters · 1,067 supplied verses</span></footer>
   <script src="config.js"></script>
   <script src="data/matthew-data.js"></script>
-  <script type="module" src="app.js?v=1.7.1"></script>
+  <script type="module" src="app.js?v=1.7.2"></script>
 </body>
 </html>
