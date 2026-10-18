@@ -1,4 +1,4 @@
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const LOCAL_KEY = 'matthew-verse-mapper-v1';
 const RULE_PREFS_KEY = 'matthew-rule-category-defaults-v1';
 const MATRIX_SUMMARY_PREFS_KEY = 'matthew-matrix-summary-visibility-v1';
@@ -222,6 +222,7 @@ function ruleActionButtons(groupId) {
     ['many', 'Rule Many', 'Make a separate Rule for every selected sentence'],
     ['not_rule', 'Not Rule', 'Make a separate Not Rule for each selected sentence'],
     ['unsure', 'Unsure', 'Mark selected sentences separately as Unsure'],
+    ['clear', 'Clear Marking', 'Return selected sentences to NC (uncategorized)'],
   ].forEach(([action, label, title]) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1538,6 +1539,10 @@ async function createRuleEntry(groupId, action) {
   const sentenceKeys = [...selected].filter((id) => sentenceById.has(id)).sort(compareSentenceIds);
   if (!sentenceKeys.length) throw new Error('Select at least one sentence first.');
   const group = state.groups.find((item) => String(item.id) === String(groupId));
+  if (action === 'clear') {
+    await clearSelectedSentenceMarkings(groupId, sentenceKeys);
+    return;
+  }
   const verdict = action === 'not_rule' ? 'not_rule' : action === 'unsure' ? 'unsure' : 'rule';
   const combine = action === 'one';
   const portions = combine ? [sentenceKeys] : sentenceKeys.map((id) => [id]);
@@ -1632,6 +1637,60 @@ async function splitRuleEntry(ruleId) {
   await replaceRuleEntries([entry], payloads, payloads.map(() => categories));
   if (els.ruleEditorDialog.open) els.ruleEditorDialog.close();
   toast(`Split into ${ids.length} separate ${ruleVerdictLabel(entry.verdict)} entries.`);
+}
+
+// Clearing a marking removes the sentence from every decision that contains it.
+// This prevents an older decision from resurfacing after the latest is cleared.
+async function clearSelectedSentenceMarkings(groupId, sentenceKeys) {
+  if (state.ruleActionBusy) return;
+  const removing = new Set(sentenceKeys.map(String));
+  const affected = state.ruleEntries.filter((entry) => (entry.sentence_keys || [])
+    .some((id) => removing.has(String(id))));
+  if (!affected.length) {
+    state.ruleSelections.set(String(groupId), new Set());
+    renderMatrix();
+    toast('Selected sentences are already uncategorized.');
+    return;
+  }
+  const kept = affected.map((entry) => ({
+    entry, ids: (entry.sentence_keys || []).map(String).filter((id) => !removing.has(id)),
+  })).filter((item) => item.ids.length);
+  const payloads = kept.map(({ entry, ids }) => ({
+    user_id: state.mode === 'supabase' ? state.userId : 'local',
+    group_id: entry.group_id || null,
+    verdict: entry.verdict,
+    sentence_keys: ids,
+    reference_text: formatReferences(ids),
+    note: entry.note || '',
+    ...(entry.created_at ? { created_at: entry.created_at } : {}),
+  }));
+  const categorySets = kept.map(({ entry }) => [...ruleCategoryIds(entry.id)]);
+  const hasCombined = affected.some((entry) => (entry.sentence_keys || []).length > 1);
+  const explanation = hasCombined ? ' Other sentences in combined entries will be preserved.' : '';
+  if (!window.confirm(`Clear Rule/Not Rule/Unsure markings for ${sentenceKeys.length} selected sentence(s)?${explanation}`)) return;
+  state.ruleActionBusy = true;
+  try {
+    if (payloads.length) {
+      await replaceRuleEntries(affected, payloads, categorySets);
+    } else {
+      if (state.mode === 'supabase') {
+        const result = await state.supabase.from('rule_entries').delete()
+          .in('id', affected.map((entry) => entry.id));
+        if (result.error) throw result.error;
+      }
+      const oldIds = new Set(affected.map((entry) => String(entry.id)));
+      state.ruleEntries = state.ruleEntries.filter((entry) => !oldIds.has(String(entry.id)));
+      state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter((key) =>
+        !affected.some((entry) => key.startsWith(`${entry.id}:`))));
+      if (state.mode === 'local') saveLocal();
+    }
+    state.ruleSelections.set(String(groupId), new Set());
+    renderMatrix();
+    renderRules();
+    toast(`${sentenceKeys.length} sentence(s) returned to NC (uncategorized).`);
+  } finally {
+    state.ruleActionBusy = false;
+  }
 }
 
 function updateRuleMergeControls() {
