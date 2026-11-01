@@ -455,3 +455,19 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 .rules-filter-empty[hidden] { display:none; }
 .rules-list[hidden] { display:none; }
 @media(max-width:600px){.rules-filter-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }.rules-filter-options label{padding:9px 6px;gap:5px;font-size:11px;}.rules-filter-options input{width:16px;height:16px;flex:0 0 auto;}}
+
+/* Section Matrix subnavigation and compact category toolbar */
+.section-subtabs{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:1rem}
+.section-subtabs .is-active{background:#2c594a;color:white;border-color:#2c594a}
+.category-action-chips{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.category-action-chips .compact-button{padding:.27rem .5rem;font-size:.74rem}
+.category-float-group{display:inline-flex;align-items:center;gap:.2rem;flex-wrap:wrap}
+.category-float-children{display:inline-flex;align-items:center;gap:.2rem;flex-wrap:wrap}
+.category-float-children[hidden]{display:none}
+#floating-category-toolbar{position:fixed;top:0;left:0;right:0;z-index:70;max-height:28vh;overflow-y:auto;padding:.4rem .75rem;background:#f9f6ed;box-shadow:0 3px 14px #0002}
+#categorized-sections-list .rule-card{margin-top:.6rem;padding:.75rem}
+#categorized-sections-list .category-filter-option{display:inline-flex;margin:.3rem .5rem .1rem 0}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sentence input{display:none}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sticky-categories{display:none}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-builder-toolbar{display:none}
+@media(max-width:650px){#floating-category-toolbar{padding:.3rem;max-height:35vh}.section-subtabs{width:100%}.section-subtabs button{flex:1}}
