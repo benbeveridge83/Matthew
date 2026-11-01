@@ -20,7 +20,8 @@
       </a>
       <nav class="tabs" aria-label="Main views">
         <button class="tab is-active" data-view="scripture" type="button">Scripture</button>
-        <button class="tab" data-view="matrix" type="button">Category Matrix <span id="group-count-badge" class="count-badge">0</span></button>
+        <button class="tab" data-view="matrix" type="button">Section Matrix <span id="group-count-badge" class="count-badge">0</span></button>
+        <button class="tab" data-view="categories" type="button">Categories</button>
         <button class="tab" data-view="rules" type="button">Rules <span id="rule-count-badge" class="count-badge">0</span></button>
       </nav>
       <div class="header-actions">
@@ -63,9 +64,11 @@
         <div class="matrix-hero">
           <div>
             <p class="eyebrow">Your study structure</p>
-            <h1 id="matrix-title">Category Matrix</h1>
+            <h1 id="matrix-title">Section Matrix</h1>
+            <div class="section-subtabs"><button class="secondary-button is-active" type="button" data-matrix-mode="rules">Rules Matrix</button><button class="secondary-button" type="button" data-matrix-mode="categories">Category Matrix</button></div>
             <p class="intro">Tap any passage group to choose all of its categories in one window. On phones, this replaces sideways scrolling through the matrix.</p>
           </div>
+          <button id="save-point-button" class="secondary-button" type="button">Save point (download)</button>
           <button id="add-column-button" class="primary-button" type="button">＋ New category column</button>
         </div>
         <div class="matrix-summary-controls" role="group" aria-label="Collapsed passage row display">
@@ -106,6 +109,8 @@
         </div>
       </section>
 
+      <section id="categories-view" class="view" aria-label="Categorized sections"><div class="matrix-hero"><div><p class="eyebrow">Section categories</p><h1>Categories</h1><p class="intro">Filter sections by assigned categories and remove selected assignments.</p></div></div><div class="filter-actions"><button id="categories-select-all" class="secondary-button compact-button" type="button">Select all</button><button id="categories-select-none" class="secondary-button compact-button" type="button">Select none</button><button id="categories-remove" class="secondary-button compact-button" type="button">Uncategorize selected</button></div><div id="categories-filter-list" class="category-filter-list"></div><div id="categorized-sections-list" class="rules-list"></div></section>
+
       <section id="rules-view" class="view" aria-labelledby="rules-title">
         <div class="matrix-hero">
           <div>
@@ -130,6 +135,7 @@
           <div class="rules-filter-footer"><span id="rules-filter-summary" aria-live="polite">Showing all decisions</span><button id="rules-filter-all" class="text-button" type="button">Show all</button></div>
         </fieldset>
         <p id="rules-filter-empty" class="rules-filter-empty" hidden>No decisions match the selected filters. Choose another type or tap Show all.</p>
+        <div class="filter-actions"><button id="rule-select-visible" class="secondary-button compact-button" type="button">Select visible</button><button id="rule-deselect-all" class="secondary-button compact-button" type="button">Deselect all</button><button id="rule-uncategorize-selected" class="secondary-button compact-button" type="button">Uncategorize selected</button></div>
         <div class="rule-merge-controls"><button id="combine-selected-rules" class="secondary-button" type="button" disabled>Combine selected Rules</button><span id="selected-rules-count">0 selected</span></div>
         <div id="rules-list" class="rules-list"></div>
       </section>
@@ -343,6 +349,7 @@
     </form>
   </dialog>
 
+  <div id="floating-category-toolbar" class="floating-rule-toolbar" hidden aria-label="Section category controls"></div>
   <div id="floating-rule-toolbar" class="floating-rule-toolbar" hidden aria-label="Rule classification controls"></div>
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   <footer class="site-footer"><span>Matthew Verse Mapper</span><span>v1.7.2 · 28 chapters · 1,067 supplied verses</span></footer>
