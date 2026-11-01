@@ -17,6 +17,8 @@ const sentenceOrder = new Map(allSentences.map((sentence, index) => [sentence.id
 const state = {
   chapter: 1,
   view: 'scripture',
+  matrixMode: 'rules',
+  selectedCategoryIds: new Set(),
   selected: new Set(),
   expanded: new Set(),
   hiddenGroupIds: new Set(),
@@ -36,6 +38,7 @@ const state = {
   ruleSelections: new Map(),
   selectedRulesToMerge: new Set(),
   visibleRuleVerdicts: new Set(['rule', 'not_rule', 'unsure']),
+  selectedRuleIds: new Set(),
   matrixSummary: { rules: true, categories: true },
   ruleActionBusy: false,
   activeRuleEditorId: null,
@@ -225,7 +228,8 @@ function ruleActionButtons(groupId) {
     ['one', 'Rule One', 'Combine all selected sentences into one Rule'],
     ['many', 'Rule Many', 'Make a separate Rule for every selected sentence'],
     ['not_rule', 'Not Rule', 'Make a separate Not Rule for each selected sentence'],
-    ['unsure', 'Unsure', 'Mark selected sentences separately as Unsure'],
+    ['unsure', 'Single Unsure', 'Mark selected sentences individually as Unsure'],
+    ['unsure_many', 'MULT.UNS', 'Combine selected sentences into one Unsure entry'],
     ['clear', 'Clear Marking', 'Return selected sentences to NC (uncategorized)'],
   ].forEach(([action, label, title]) => {
     const button = document.createElement('button');
@@ -730,8 +734,10 @@ function setView(view) {
   $$('.view').forEach((section) => section.classList.toggle('is-active', section.id === `${view}-view`));
   $$('.tab').forEach((tab) => tab.classList.toggle('is-active', tab.dataset.view === view));
   if (view === 'matrix') renderMatrix();
+  if (view === 'categories') renderCategorizedSections();
   if (view === 'rules') renderRules();
   requestAnimationFrame(updateFloatingRuleToolbar);
+  requestAnimationFrame(updateFloatingCategoryToolbar);
   window.location.hash = view;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -748,7 +754,7 @@ function makePassageDetail(group) {
   const selectionLabel = document.createElement('span');
   selectionLabel.className = 'rule-selection-count';
   selectionLabel.textContent = selected.size ? `${selected.size} selected` : 'Select sentence(s) below';
-  toolbar.append(ruleActionButtons(group.id), selectionLabel);
+  if (state.matrixMode === 'rules') toolbar.append(ruleActionButtons(group.id), selectionLabel);
   detail.append(toolbar);
 
   const sticky = document.createElement('div');
@@ -780,7 +786,7 @@ function makePassageDetail(group) {
   manage.type = 'button'; manage.className = 'text-button rule-manage-inline';
   manage.dataset.openRuleCategories = 'true'; manage.textContent = 'Edit rule categories';
   sticky.append(stickyLabel, manage, stickyOptions);
-  detail.append(sticky);
+  if (state.matrixMode === 'rules') detail.append(sticky);
 
   (group.sentence_keys || []).slice().sort(compareSentenceIds).forEach((id) => {
     const sentence = sentenceById.get(id);
@@ -790,7 +796,8 @@ function makePassageDetail(group) {
     label.className = `rule-sentence${latest?.verdict === 'rule' ? ' is-rule' : ''}${latest?.verdict === 'not_rule' ? ' is-not-rule' : ''}${latest?.verdict === 'unsure' ? ' is-unsure' : ''}`;
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.dataset.ruleSentence = id;
+    if (state.matrixMode === 'rules') checkbox.dataset.ruleSentence = id;
+    else { checkbox.dataset.categorySentence = id; checkbox.dataset.categoryGroup = group.id; }
     checkbox.dataset.ruleGroup = group.id;
     checkbox.checked = selected.has(id);
     const copy = document.createElement('span');
@@ -799,7 +806,7 @@ function makePassageDetail(group) {
     const text = document.createElement('span');
     text.textContent = sentence.text;
     copy.append(ref, text);
-    if (latest) {
+    if (latest && state.matrixMode === 'rules') {
       const badge = document.createElement('em');
       badge.textContent = ruleVerdictLabel(latest.verdict);
       copy.append(badge);
@@ -1028,6 +1035,7 @@ function renderMatrix() {
     if (state.expanded.has(String(group.id))) subgroupsFor(group.id).forEach((subgroup) => els.matrixBody.append(makeMatrixRow(subgroup, { subgroup: true, verdictMap })));
   });
   requestAnimationFrame(updateFloatingRuleToolbar);
+  requestAnimationFrame(updateFloatingCategoryToolbar);
   const empty = groups.length === 0;
   els.matrixEmpty.hidden = !empty;
   els.matrixFilterEmpty.hidden = empty || visibleGroups.length > 0;
@@ -1547,8 +1555,8 @@ async function createRuleEntry(groupId, action) {
     await clearSelectedSentenceMarkings(groupId, sentenceKeys);
     return;
   }
-  const verdict = action === 'not_rule' ? 'not_rule' : action === 'unsure' ? 'unsure' : 'rule';
-  const combine = action === 'one';
+  const verdict = action === 'not_rule' ? 'not_rule' : action.startsWith('unsure') ? 'unsure' : 'rule';
+  const combine = action === 'one' || action === 'unsure_many';
   const portions = combine ? [sentenceKeys] : sentenceKeys.map((id) => [id]);
   const categoryIds = [...state.activeRuleCategoryIds].filter((id) =>
     state.ruleColumns.some((column) => String(column.id) === String(id)));
@@ -1750,7 +1758,7 @@ async function mergeSelectedRules() {
 function updateFloatingRuleToolbar() {
   const floating = els.floatingRuleToolbar;
   if (!floating) return;
-  if (state.view !== 'matrix' || document.querySelector('dialog[open]')) {
+  if (state.view !== 'matrix' || state.matrixMode !== 'rules' || document.querySelector('dialog[open]')) {
     floating.hidden = true;
     return;
   }
@@ -1816,9 +1824,9 @@ function renderRules() {
     combineCheck.type = 'checkbox';
     combineCheck.dataset.combineRuleId = String(entry.id);
     combineCheck.checked = state.selectedRulesToMerge.has(String(entry.id));
-    combineCheck.disabled = entry.verdict !== 'rule';
+    combineCheck.disabled = false;
     const combineCopy = document.createElement('span');
-    combineCopy.textContent = 'Select to combine';
+    combineCopy.textContent = 'Select';
     selectLabel.append(combineCheck, combineCopy);
     heading.append(selectLabel);
 
@@ -2093,7 +2101,92 @@ async function deleteGroup(groupId) {
   toast('Passage group deleted.');
 }
 
+
+function renderCategorizedSections() {
+  const filters = $('#categories-filter-list'), list = $('#categorized-sections-list');
+  if (!filters || !list) return;
+  filters.replaceChildren(); list.replaceChildren();
+  state.columns.forEach(column => {
+    const label=document.createElement('label'); label.className='category-filter-option';
+    const input=document.createElement('input'); input.type='checkbox'; input.dataset.categoryListFilter=column.id;
+    input.checked=state.selectedCategoryIds.has(String(column.id));
+    const name=document.createElement('span'); name.textContent=column.name;
+    label.append(input,name); filters.append(label);
+  });
+  const selected = state.selectedCategoryIds;
+  state.groups.filter(group=>!isSubgroup(group)).forEach(group=>{
+    const assigned=state.columns.filter(column=>aggregateCategoryState(group.id,column.id)!=='none' && (!selected.size || selected.has(String(column.id))));
+    if (!assigned.length) return;
+    const card=document.createElement('div'); card.className='rule-card';
+    const heading=document.createElement('strong'); heading.textContent=group.name+' · '+visibleGroupReference(group);
+    card.append(heading);
+    assigned.forEach(column=>{
+      const label=document.createElement('label'); label.className='category-filter-option';
+      const checkbox=document.createElement('input');checkbox.type='checkbox';
+      checkbox.dataset.removeCategoryGroup=group.id;checkbox.dataset.removeCategoryColumn=column.id;
+      const span=document.createElement('span');span.textContent=column.name;
+      label.append(checkbox,span);card.append(label);
+    });
+    list.append(card);
+  });
+}
+function categoryActionButtons(groupId) {
+ const wrap=document.createElement('div');wrap.className='category-action-chips';
+ const manage=document.createElement('button');manage.type='button';manage.className='secondary-button compact-button';
+ manage.textContent='✎ Edit';manage.dataset.openMatrixCategoryManager='true';wrap.append(manage);
+ state.columns.forEach(column=>{
+    const btn=document.createElement('button');btn.type='button';btn.className='secondary-button compact-button';
+    btn.dataset.applyCategory=column.id;btn.dataset.applyCategoryGroup=groupId;
+    btn.textContent=column.name;wrap.append(btn);
+ });
+ return wrap;
+}
+function updateFloatingCategoryToolbar(){
+ const el=$('#floating-category-toolbar');if(!el)return;
+ if(state.view!=='matrix'||state.matrixMode!=='categories'||document.querySelector('dialog[open]')){el.hidden=true;return;}
+ const first=[...document.querySelectorAll('#matrix-body .rule-builder:not([hidden])')].find(d=>{
+   const r=d.getBoundingClientRect();return r.top<window.innerHeight-50&&r.bottom>80;
+ });
+ if(!first){el.hidden=true;return;}
+ const id=first.dataset.ruleBuilderGroup;
+ if(el.dataset.groupId!==id){el.dataset.groupId=id;el.replaceChildren(categoryActionButtons(id));}
+ el.hidden=false;
+}
+function downloadSavePoint(){
+ const data={version:APP_VERSION,created_at:new Date().toISOString(),mode:state.mode,
+ groups:state.groups,columns:state.columns,cells:[...state.cells],
+ ruleEntries:state.ruleEntries,ruleColumns:state.ruleColumns,ruleCategoryCells:[...state.ruleCategoryCells]};
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download='matthew-save-point-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+ document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ toast('Save point downloaded. Keep this file for recovery.');
+}
+
 function bindEvents() {
+  $('[data-matrix-mode]').forEach(btn=>btn.addEventListener('click',()=>{
+    state.matrixMode=btn.dataset.matrixMode;
+    $('[data-matrix-mode]').forEach(b=>b.classList.toggle('is-active',b===btn));
+    $('#add-column-button').hidden=state.matrixMode==='rules';
+    renderMatrix();
+  }));
+  $('#save-point-button')?.addEventListener('click',downloadSavePoint);
+  $('#categories-select-all')?.addEventListener('click',()=>{state.selectedCategoryIds=new Set(state.columns.map(c=>String(c.id)));renderCategorizedSections();});
+  $('#categories-select-none')?.addEventListener('click',()=>{state.selectedCategoryIds.clear();renderCategorizedSections();});
+  $('#categories-filter-list')?.addEventListener('change',e=>{const c=e.target.closest('[data-category-list-filter]');if(!c)return;c.checked?state.selectedCategoryIds.add(c.dataset.categoryListFilter):state.selectedCategoryIds.delete(c.dataset.categoryListFilter);renderCategorizedSections();});
+  $('#categories-remove')?.addEventListener('click',async()=>{
+    const checks=$('#categorized-sections-list [data-remove-category-group]:checked');
+    if(!checks.length)return toast('Select assignments first.','error');
+    if(!confirm('Remove '+checks.length+' category assignments?'))return;
+    try{for(const input of checks){const group=state.groups.find(g=>String(g.id)===input.dataset.removeCategoryGroup);const columnId=input.dataset.removeCategoryColumn;if(!group)continue;const targets=isSplitGroup(group)?subgroupsFor(group.id):[group];for(const target of targets){if(state.cells.has(target.id+':'+columnId))await toggleCell(target.id,columnId);}}renderCategorizedSections();}catch(e){toast(e.message||'Unable to remove category','error');}
+  });
+  $('#floating-category-toolbar')?.addEventListener('click',async e=>{
+    const edit=e.target.closest('[data-open-matrix-category-manager]');if(edit){$('#matrix-categories-dialog')?.showModal();return;}
+    const btn=e.target.closest('[data-apply-category]');if(!btn)return;
+    const group=state.groups.find(g=>String(g.id)===btn.dataset.applyCategoryGroup);if(!group)return;
+    if(isSplitGroup(group)){openCategoryDialog(group.id);return;}
+    try{await toggleCell(group.id,btn.dataset.applyCategory);renderCategorizedSections();}catch(error){toast(error.message||'Failed to apply category','error');}
+  });
   $$('.tab').forEach((tab) => tab.addEventListener('click', () => setView(tab.dataset.view)));
   $$('[data-go-scripture]').forEach((button) => button.addEventListener('click', () => setView('scripture')));
   els.chapterSelect.addEventListener('change', () => { state.chapter = Number(els.chapterSelect.value); renderChapter(); });
@@ -2365,6 +2458,18 @@ function bindEvents() {
     else state.selectedRulesToMerge.delete(String(checkbox.dataset.combineRuleId));
     updateRuleMergeControls();
   });
+  $('#rule-select-visible')?.addEventListener('click', () => { orderedRuleEntries().filter(e => state.visibleRuleVerdicts.has(e.verdict)).forEach(e => state.selectedRulesToMerge.add(String(e.id))); renderRules(); });
+  $('#rule-deselect-all')?.addEventListener('click', () => { state.selectedRulesToMerge.clear(); renderRules(); });
+  $('#rule-uncategorize-selected')?.addEventListener('click', async () => {
+    const selected = orderedRuleEntries().filter(e => state.selectedRulesToMerge.has(String(e.id)));
+    if (!selected.length) return toast('Select decisions first.', 'error');
+    if (!confirm(`Uncategorize ${selected.length} selected decisions? Create a save point first if you may want to restore them.`)) return;
+    try {
+      const ids = [...new Set(selected.flatMap(e => e.sentence_keys || []))];
+      await clearSelectedSentenceMarkings(null, ids);
+      state.selectedRulesToMerge.clear(); renderRules();
+    } catch(error) { toast(error.message || 'Could not uncategorize selections', 'error'); }
+  });
   els.mergeRulesButton?.addEventListener('click', async () => {
     if (els.mergeRulesButton.disabled) return;
     els.mergeRulesButton.disabled = true;
@@ -2527,7 +2632,7 @@ async function init() {
   });
   await initializeConnection();
   const requestedView = location.hash.replace('#', '');
-  if (requestedView === 'matrix' || requestedView === 'rules') setView(requestedView);
+  if (requestedView === 'matrix' || requestedView === 'rules' || requestedView === 'categories') setView(requestedView);
   console.info(`Matthew Verse Mapper v${APP_VERSION}: ${scripture.chapterCount} chapters, ${scripture.verseCount} supplied verses, ${scripture.sentenceCount} sentence blocks.`);
 }
 
