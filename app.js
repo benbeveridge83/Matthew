@@ -2170,9 +2170,9 @@ function downloadSavePoint(){
 }
 
 function bindEvents() {
-  $('[data-matrix-mode]').forEach(btn=>btn.addEventListener('click',()=>{
+  $$('[data-matrix-mode]').forEach(btn=>btn.addEventListener('click',()=>{
     state.matrixMode=btn.dataset.matrixMode;
-    $('[data-matrix-mode]').forEach(b=>b.classList.toggle('is-active',b===btn));
+    $$('[data-matrix-mode]').forEach(b=>b.classList.toggle('is-active',b===btn));
     $('#add-column-button').hidden=state.matrixMode==='rules';
     renderMatrix();
   }));
@@ -2195,7 +2195,7 @@ function bindEvents() {
   $('#categories-select-none')?.addEventListener('click',()=>{state.selectedCategoryIds.clear();renderCategorizedSections();});
   $('#categories-filter-list')?.addEventListener('change',e=>{const c=e.target.closest('[data-category-list-filter]');if(!c)return;c.checked?state.selectedCategoryIds.add(c.dataset.categoryListFilter):state.selectedCategoryIds.delete(c.dataset.categoryListFilter);renderCategorizedSections();});
   $('#categories-remove')?.addEventListener('click',async()=>{
-    const checks=$('#categorized-sections-list [data-remove-category-group]:checked');
+    const checks=$$('#categorized-sections-list [data-remove-category-group]:checked');
     if(!checks.length)return toast('Select assignments first.','error');
     if(!confirm('Remove '+checks.length+' category assignments?'))return;
     try{for(const input of checks){const group=state.groups.find(g=>String(g.id)===input.dataset.removeCategoryGroup);const columnId=input.dataset.removeCategoryColumn;if(!group)continue;const targets=isSplitGroup(group)?subgroupsFor(group.id):[group];for(const target of targets){if(state.cells.has(target.id+':'+columnId))await toggleCell(target.id,columnId);}}renderCategorizedSections();}catch(e){toast(e.message||'Unable to remove category','error');}
