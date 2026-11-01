@@ -855,7 +855,7 @@ function makeMatrixRow(group, { subgroup = false, verdictMap = sentenceVerdictMa
   });
   const complete = total > 0 && counts.nc === 0;
   const categoryComplete = state.columns.some(column => aggregateCategoryState(group.id, column.id) === 'all');
-  if (state.matrixMode === 'rules' ? complete : categoryComplete) row.classList.add('is-complete');
+  if (complete && (state.matrixMode === 'rules' || categoryComplete)) row.classList.add('is-complete');
   if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
   const summary = document.createElement('div');
