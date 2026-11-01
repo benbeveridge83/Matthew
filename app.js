@@ -1061,7 +1061,8 @@ function refreshMatrixCategoryEditor() {
     const remove = document.createElement('button');
     remove.type = 'button'; remove.className = 'text-button danger-text';
     remove.dataset.matrixCategoryDelete = column.id; remove.textContent = 'Delete';
-    row.append(label,count,rename,remove);
+    const sub=document.createElement('button');sub.type='button';sub.className='text-button';sub.dataset.addMatrixSubcategory=column.id;sub.textContent='＋ Subcategory';
+    row.append(label,count,sub,rename,remove);
     list.append(row);
   });
 }
@@ -1348,7 +1349,7 @@ async function saveCategoryAssignments(groupId, selectedCategoryIds) {
       if (result.error) throw result.error;
     }
     for (const columnId of toRemove) {
-      const result = await state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('category_id', columnId);
+      const result = await state.supabase.from('group_category_cells').delete().eq('group_id', groupId).eq('column_id', columnId);
       if (result.error) throw result.error;
     }
   }
@@ -2134,10 +2135,15 @@ function categoryActionButtons(groupId) {
  const wrap=document.createElement('div');wrap.className='category-action-chips';
  const manage=document.createElement('button');manage.type='button';manage.className='secondary-button compact-button';
  manage.textContent='✎ Edit';manage.dataset.openMatrixCategoryManager='true';wrap.append(manage);
- state.columns.forEach(column=>{
+ state.columns.filter(c=>!c.name.includes(' › ')).forEach(column=>{
+    const holder=document.createElement('span');holder.className='category-float-group';
     const btn=document.createElement('button');btn.type='button';btn.className='secondary-button compact-button';
-    btn.dataset.applyCategory=column.id;btn.dataset.applyCategoryGroup=groupId;
-    btn.textContent=column.name;wrap.append(btn);
+    btn.dataset.applyCategory=column.id;btn.dataset.applyCategoryGroup=groupId;btn.textContent=column.name;holder.append(btn);
+    const children=state.columns.filter(c=>c.name.startsWith(column.name+' › '));
+    if(children.length){const expand=document.createElement('button');expand.type='button';expand.className='text-button';expand.textContent='▾';expand.dataset.toggleSubcategories=column.id;holder.append(expand);
+      const inner=document.createElement('span');inner.className='category-float-children';inner.hidden=true;
+      children.forEach(child=>{const b=document.createElement('button');b.type='button';b.className='secondary-button compact-button';b.dataset.applyCategory=child.id;b.dataset.applyCategoryGroup=groupId;b.textContent=child.name.slice(column.name.length+3);inner.append(b);});holder.append(inner);
+    }wrap.append(holder);
  });
  return wrap;
 }
@@ -2181,7 +2187,8 @@ function bindEvents() {
     try{for(const input of checks){const group=state.groups.find(g=>String(g.id)===input.dataset.removeCategoryGroup);const columnId=input.dataset.removeCategoryColumn;if(!group)continue;const targets=isSplitGroup(group)?subgroupsFor(group.id):[group];for(const target of targets){if(state.cells.has(target.id+':'+columnId))await toggleCell(target.id,columnId);}}renderCategorizedSections();}catch(e){toast(e.message||'Unable to remove category','error');}
   });
   $('#floating-category-toolbar')?.addEventListener('click',async e=>{
-    const edit=e.target.closest('[data-open-matrix-category-manager]');if(edit){$('#matrix-categories-dialog')?.showModal();return;}
+    const edit=e.target.closest('[data-open-matrix-category-manager]');if(edit){refreshMatrixCategoryEditor();$('#matrix-categories-dialog')?.showModal();return;}
+    const sub=e.target.closest('[data-toggle-subcategories]');if(sub){const children=sub.parentElement.querySelector('.category-float-children');if(children)children.hidden=!children.hidden;return;}
     const btn=e.target.closest('[data-apply-category]');if(!btn)return;
     const group=state.groups.find(g=>String(g.id)===btn.dataset.applyCategoryGroup);if(!group)return;
     if(isSplitGroup(group)){openCategoryDialog(group.id);return;}
@@ -2528,12 +2535,16 @@ function bindEvents() {
   $('#matrix-category-manager-list')?.addEventListener('click', async (event) => {
     const edit = event.target.closest('[data-matrix-category-rename]');
     const del = event.target.closest('[data-matrix-category-delete]');
-    if (!edit && !del) return;
-    const id = String(edit?.dataset.matrixCategoryRename || del?.dataset.matrixCategoryDelete);
+    const sub = event.target.closest('[data-add-matrix-subcategory]');
+    if (!edit && !del && !sub) return;
+    const id = String(edit?.dataset.matrixCategoryRename || del?.dataset.matrixCategoryDelete || sub?.dataset.addMatrixSubcategory);
     const column = state.columns.find((item) => String(item.id) === id);
     if (!column) return;
     try {
-      if (edit) {
+      if (sub) {
+        const name = prompt('New subcategory under '+column.name)?.trim();
+        if(name) await createColumn(column.name+' › '+name);
+      } else if (edit) {
         const name = prompt('Rename section category', column.name)?.trim();
         if (name && name !== column.name) await updateColumn(id,name);
       } else await deleteColumn(id);
