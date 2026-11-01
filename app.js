@@ -854,7 +854,8 @@ function makeMatrixRow(group, { subgroup = false, verdictMap = sentenceVerdictMa
     else counts.nc += 1;
   });
   const complete = total > 0 && counts.nc === 0;
-  if (complete) row.classList.add('is-complete');
+  const categoryComplete = state.columns.some(column => aggregateCategoryState(group.id, column.id) === 'all');
+  if (state.matrixMode === 'rules' ? complete : categoryComplete) row.classList.add('is-complete');
   if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
   const summary = document.createElement('div');
@@ -2121,6 +2122,9 @@ function renderCategorizedSections() {
     const card=document.createElement('div'); card.className='rule-card';
     const heading=document.createElement('strong'); heading.textContent=group.name+' · '+visibleGroupReference(group);
     card.append(heading);
+    const passage=document.createElement('div');passage.className='categorized-passage-text';
+    (group.sentence_keys||[]).slice().sort(compareSentenceIds).forEach(id=>{const sentence=sentenceById.get(id);if(!sentence)return;const p=document.createElement('p');const ref=document.createElement('strong');ref.textContent=sentence.chapter+':'+sentence.verse+' ';p.append(ref,document.createTextNode(sentence.text));passage.append(p);});
+    card.append(passage);
     assigned.forEach(column=>{
       const label=document.createElement('label'); label.className='category-filter-option';
       const checkbox=document.createElement('input');checkbox.type='checkbox';
