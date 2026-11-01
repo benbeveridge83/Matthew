@@ -471,3 +471,40 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
 #matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sticky-categories{display:none}
 #matrix-view:has([data-matrix-mode="categories"].is-active) .rule-builder-toolbar{display:none}
 @media(max-width:650px){#floating-category-toolbar{padding:.3rem;max-height:35vh}.section-subtabs{width:100%}.section-subtabs button{flex:1}}
+
+/* Mobile category-mode correction: toolbar must stay in viewport, sentence prose fills row */
+#floating-category-toolbar.floating-rule-toolbar {
+  position:fixed; top:8px; left:50%; right:auto;
+  transform:translateX(-50%); width:min(650px, calc(100vw - 20px));
+  max-height:min(36vh,300px); overflow-y:auto; overflow-x:hidden;
+  box-sizing:border-box; z-index:95;
+}
+#floating-category-toolbar[hidden]{display:none!important}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sentence{
+  display:block; width:100%; max-width:100%; box-sizing:border-box;
+  overflow-wrap:normal; word-break:normal;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sentence>span{
+  display:block; width:100%; min-width:0; overflow-wrap:break-word;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sentence>span>span{
+  display:block; white-space:normal; overflow-wrap:break-word;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-sentence input[type="checkbox"]{
+  display:none!important;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .passage-detail{
+  margin-left:0; min-width:0; width:100%; box-sizing:border-box;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-builder{
+  display:block; min-width:0; width:100%; box-sizing:border-box;
+}
+#matrix-view:has([data-matrix-mode="categories"].is-active) .rule-builder .rule-sentence{margin:8px 0}
+#categorized-sections-list .categorized-passage-text{margin:.65rem 0;line-height:1.6}
+#categorized-sections-list .categorized-passage-text p{margin:.4rem 0;font-family:"Libre Caslon Text",serif}
+#categorized-sections-list .categorized-passage-text strong{color:var(--accent);font-family:"DM Sans",sans-serif;font-size:.75rem}
+#categorized-sections-list .rule-card{min-width:0;overflow-wrap:break-word}
+@media(max-width:650px){
+ #floating-category-toolbar.floating-rule-toolbar{top:6px;max-height:30vh}
+ #matrix-view:has([data-matrix-mode="categories"].is-active) .matrix-table td:first-child{width:100%;min-width:0}
+}
