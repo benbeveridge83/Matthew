@@ -2177,6 +2177,20 @@ function bindEvents() {
     renderMatrix();
   }));
   $('#save-point-button')?.addEventListener('click',downloadSavePoint);
+  $('#restore-point-button')?.addEventListener('click',()=>$('#restore-point-file')?.click());
+  $('#restore-point-file')?.addEventListener('change',async e=>{
+    const file=e.target.files?.[0];if(!file)return;
+    try{
+      if(state.mode!=='local')throw Error('Restore is available in local mode only. Download your save point and switch to local mode before restoring it.');
+      const data=JSON.parse(await file.text());
+      if(!Array.isArray(data.groups)||!Array.isArray(data.columns)||!Array.isArray(data.cells)||!Array.isArray(data.ruleEntries)||!Array.isArray(data.ruleColumns)||!Array.isArray(data.ruleCategoryCells))throw Error('This is not a valid Matthew save point.');
+      if(!confirm('Replace the current local study with this saved point? Your current study will be backed up automatically first.'))return;
+      localStorage.setItem(LOCAL_BACKUP_PREFIX+'-before-restore-'+Date.now(),JSON.stringify(localSnapshot()));
+      localStorage.setItem(LOCAL_KEY,JSON.stringify({groups:data.groups,columns:data.columns,cells:data.cells,ruleEntries:data.ruleEntries,ruleColumns:data.ruleColumns,ruleCategoryCells:data.ruleCategoryCells}));
+      await loadRecords();renderMatrix();renderRules();renderCategorizedSections();toast('Save point restored.');
+    }catch(error){toast(error.message||'Could not restore save point','error');}
+    finally{e.target.value='';}
+  });
   $('#categories-select-all')?.addEventListener('click',()=>{state.selectedCategoryIds=new Set(state.columns.map(c=>String(c.id)));renderCategorizedSections();});
   $('#categories-select-none')?.addEventListener('click',()=>{state.selectedCategoryIds.clear();renderCategorizedSections();});
   $('#categories-filter-list')?.addEventListener('change',e=>{const c=e.target.closest('[data-category-list-filter]');if(!c)return;c.checked?state.selectedCategoryIds.add(c.dataset.categoryListFilter):state.selectedCategoryIds.delete(c.dataset.categoryListFilter);renderCategorizedSections();});
