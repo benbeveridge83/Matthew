@@ -508,3 +508,52 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
  #floating-category-toolbar.floating-rule-toolbar{top:6px;max-height:30vh}
  #matrix-view:has([data-matrix-mode="categories"].is-active) .matrix-table td:first-child{width:100%;min-width:0}
 }
+
+/* Category editor: visually nest subcategories beneath their parent. */
+#matrix-category-manager-list .matrix-category-tree-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 13px 8px;
+  min-width: 0;
+}
+#matrix-category-manager-list .matrix-category-tree-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+#matrix-category-manager-list .matrix-category-tree-heading strong {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#matrix-category-manager-list .matrix-category-tree-heading small {
+  flex: 0 0 auto;
+}
+#matrix-category-manager-list .matrix-category-tree-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+#matrix-category-manager-list .matrix-category-tree-child {
+  margin-left: calc(min(var(--matrix-category-level), 6) * 15px);
+  padding-left: 15px;
+  border-left: 3px solid #b3a18c;
+  background: rgba(143, 116, 86, .065);
+  border-radius: 0 8px 8px 0;
+}
+#matrix-category-manager-list .matrix-category-tree-child .matrix-category-tree-heading strong::before {
+  content: "↳ ";
+  color: #81694f;
+  font-weight: 700;
+}
+@media (max-width: 420px) {
+  #matrix-category-manager-list .matrix-category-tree-child {
+    margin-left: calc(min(var(--matrix-category-level), 6) * 12px);
+    padding-left: 10px;
+  }
+}
