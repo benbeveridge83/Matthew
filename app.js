@@ -1049,21 +1049,46 @@ function refreshMatrixCategoryEditor() {
   const list = $('#matrix-category-manager-list');
   if (!list) return;
   list.replaceChildren();
-  state.columns.forEach((column) => {
+  // Keep each subcategory immediately below its parent rather than in a flat list.
+  const byId = new Map(state.columns.map(column => [String(column.id), column]));
+  const visited = new Set();
+  const ordered = [];
+  function addBranch(column, level = 0) {
+    const id = String(column.id);
+    if (visited.has(id)) return;
+    visited.add(id);
+    ordered.push({ column, level });
+    state.columns.filter(child => String(child.parent_column_id || '') === id)
+      .forEach(child => addBranch(child, level + 1));
+  }
+  state.columns.filter(column => !column.parent_column_id || !byId.has(String(column.parent_column_id)))
+    .forEach(column => addBranch(column));
+  state.columns.forEach(column => addBranch(column)); // Handle legacy or orphaned entries safely.
+  ordered.forEach(({ column, level }) => {
     const row = document.createElement('div');
-    row.className = 'rule-category-manager-item';
+    row.className = 'rule-category-manager-item matrix-category-tree-item';
+    if (level > 0) row.classList.add('matrix-category-tree-child');
+    row.style.setProperty('--matrix-category-level', String(Math.min(level, 6)));
+    const heading = document.createElement('div');
+    heading.className = 'matrix-category-tree-heading';
     const label = document.createElement('strong');
     label.textContent = column.name;
     const count = document.createElement('small');
     count.textContent = categorySectionCount(column.id) + ' sections';
+    heading.append(label, count);
+    const actions = document.createElement('div');
+    actions.className = 'matrix-category-tree-actions';
     const rename = document.createElement('button');
     rename.type = 'button'; rename.className = 'text-button';
     rename.dataset.matrixCategoryRename = column.id; rename.textContent = 'Rename';
     const remove = document.createElement('button');
     remove.type = 'button'; remove.className = 'text-button danger-text';
     remove.dataset.matrixCategoryDelete = column.id; remove.textContent = 'Delete';
-    const sub=document.createElement('button');sub.type='button';sub.className='text-button';sub.dataset.addMatrixSubcategory=column.id;sub.textContent='＋ Subcategory';
-    row.append(label,count,sub,rename,remove);
+    const sub = document.createElement('button');
+    sub.type = 'button'; sub.className = 'text-button';
+    sub.dataset.addMatrixSubcategory = column.id; sub.textContent = '＋ Subcategory';
+    actions.append(sub, rename, remove);
+    row.append(heading, actions);
     list.append(row);
   });
 }
