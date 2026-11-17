@@ -1830,143 +1830,218 @@ function updateFloatingRuleToolbar() {
 
 
 // Rules-tab quick categorization: keep drafts per entry while browsing; save all together.
-function quickRuleCategories(id) {
-  const key = String(id);
-  return state.quickRuleDrafts.get(key) || ruleCategoryIds(key);
-}
-function renderQuickRuleToolbar() {
-  let bar = $('#quick-rule-toolbar');
-  if (!els.rulesList) return;
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'quick-rule-toolbar';
-    bar.className = 'quick-rule-toolbar';
-    bar.setAttribute('aria-label', 'Assign categories to selected rule');
-    els.rulesList.before(bar);
-    bar.addEventListener('change', event => {
-      const box = event.target.closest('[data-quick-rule-category]');
-      if (!box || !state.activeQuickRuleId) return;
-      const id = String(state.activeQuickRuleId);
-      const desired = new Set(quickRuleCategories(id));
-      const cid = String(box.value);
-      if (box.checked) desired.add(cid); else desired.delete(cid);
-      state.quickRuleDrafts.set(id, desired);
-      renderQuickRuleToolbar();
-      updateQuickRuleCard(id);
-    });
-    bar.addEventListener('click', async event => {
-      if (event.target.closest('[data-quick-rule-edit]')) {
-        if (state.activeQuickRuleId) openRuleEditor(state.activeQuickRuleId);
-        return;
-      }
-      if (event.target.closest('[data-quick-rule-save]')) {
-        const button = event.target.closest('button');
-        if (state.quickRuleSaving || !state.quickRuleDrafts.size) return;
-        state.quickRuleSaving = true;
-        button.disabled = true;
-        let saved = 0;
-        try {
-          // Keep drafts for any failed entries so a retry does not lose work.
-          for (const [ruleId, desired] of [...state.quickRuleDrafts]) {
-            const original = ruleCategoryIds(ruleId);
-            const addIds = [...desired].filter(id => !original.has(id));
-            const removeIds = [...original].filter(id => !desired.has(id));
-            if (state.mode === 'supabase') {
-              if (addIds.length) {
-                const result = await state.supabase.from('rule_category_assignments').upsert(
-                  addIds.map(categoryId => ({ rule_id: ruleId, category_id: categoryId, user_id: state.userId })),
-                  { onConflict: 'rule_id,category_id', ignoreDuplicates: true }
-                );
-                if (result.error) throw result.error;
-              }
-              if (removeIds.length) {
-                const result = await state.supabase.from('rule_category_assignments').delete()
-                  .eq('rule_id', ruleId).in('category_id', removeIds);
-                if (result.error) throw result.error;
-              }
-            }
-            addIds.forEach(categoryId => state.ruleCategoryCells.add(`${ruleId}:${categoryId}`));
-            removeIds.forEach(categoryId => state.ruleCategoryCells.delete(`${ruleId}:${categoryId}`));
-            state.quickRuleDrafts.delete(ruleId);
-            saved++;
-          }
-          if (state.mode === 'local') saveLocal();
-          renderRules();
-          toast(`Saved categories for ${saved} rule${saved === 1 ? '' : 's'}.`);
-        } catch (error) {
-          renderRules();
-          toast(error.message || 'Could not save categories. Unsent changes are still selected.', 'error');
-        } finally {
-          state.quickRuleSaving = false;
-          renderQuickRuleToolbar();
-        }
-      }
-    });
-  }
-  const entry = state.ruleEntries.find(item => String(item.id) === String(state.activeQuickRuleId));
-  bar.replaceChildren();
-  const top = document.createElement('div');
-  top.className = 'quick-rule-toolbar-heading';
-  const title = document.createElement('strong');
-  title.textContent = entry ? `Selected: ${ruleVerdictLabel(entry.verdict)} · ${entry.reference_text || formatReferences(entry.sentence_keys || [])}` : 'Tap a rule below to assign categories';
-  const edit = document.createElement('button');
-  edit.type = 'button'; edit.className = 'secondary-button compact-button';
-  edit.dataset.quickRuleEdit = '1'; edit.textContent = 'Edit note';
-  edit.disabled = !entry;
-  top.append(title, edit);
-  bar.append(top);
-  const choices = document.createElement('div');
-  choices.className = 'quick-rule-category-choices';
-  if (entry) {
-    const selected = quickRuleCategories(entry.id);
-    state.ruleColumns.forEach(column => {
-      const label = document.createElement('label');
-      const box = document.createElement('input');
-      box.type = 'checkbox'; box.value = column.id;
-      box.dataset.quickRuleCategory = '1';
-      box.checked = selected.has(String(column.id));
-      const name = document.createElement('span'); name.textContent = column.name;
-      label.append(box, name);
-      choices.append(label);
-    });
-    if (!state.ruleColumns.length) {
-      const empty = document.createElement('span');
-      empty.textContent = 'Add rule categories using Manage rule categories.';
-      choices.append(empty);
+// One verified persistence path for dialog checkboxes, toolbar taps, and drag-and-drop.
+async function persistRuleCategories(ruleId, desiredIds) {
+  const id = String(ruleId);
+  const desired = new Set([...desiredIds].map(String));
+  const original = ruleCategoryIds(id);
+  const additions = [...desired].filter(cid => !original.has(cid));
+  const removals = [...original].filter(cid => !desired.has(cid));
+  if (state.mode === 'supabase') {
+    if (additions.length) {
+      const res = await state.supabase.from('rule_category_assignments').upsert(
+        additions.map(cid => ({rule_id: ruleId, category_id: cid, user_id: state.userId})),
+        {onConflict: 'rule_id,category_id', ignoreDuplicates: true}
+      );
+      if (res.error) throw res.error;
+    }
+    if (removals.length) {
+      const res = await state.supabase.from('rule_category_assignments').delete()
+        .eq('rule_id', ruleId).in('category_id', removals);
+      if (res.error) throw res.error;
+    }
+    // Verify from the database, not just the in-memory checkmarks.
+    const check = await state.supabase.from('rule_category_assignments')
+      .select('category_id').eq('rule_id', ruleId);
+    if (check.error) throw check.error;
+    const confirmed = new Set((check.data || []).map(row => String(row.category_id)));
+    if (confirmed.size !== desired.size || [...desired].some(cid => !confirmed.has(cid))) {
+      throw new Error('The category was not confirmed in the database. Please try again.');
     }
   }
+  state.ruleCategoryCells = new Set([...state.ruleCategoryCells].filter(key => !key.startsWith(id + ':')));
+  desired.forEach(cid => state.ruleCategoryCells.add(id + ':' + cid));
+  state.quickRuleDrafts.delete(id);
+  if (state.mode === 'local') saveLocal();
+  updateQuickRuleCard(id);
+  renderQuickRuleToolbar();
+}
+async function setRuleCategory(ruleId, categoryId, value = true) {
+  const desired = ruleCategoryIds(ruleId);
+  const id = String(categoryId);
+  if (value) desired.add(id); else desired.delete(id);
+  await persistRuleCategories(ruleId, desired);
+  const name = state.ruleColumns.find(item => String(item.id) === id)?.name || 'Category';
+  toast(value ? name + ' saved to rule.' : name + ' removed from rule.');
+}
+function quickRuleCategories(id) { return ruleCategoryIds(id); }
+let armedRuleCategoryId = null;
+let ruleChipPointer = null;
+let ruleChipSuppressClick = false;
+let ruleChipScrollFrame = 0;
+let ruleChipScrollVelocity = 0;
+function ruleDropTargetAt(x,y) {
+  return document.elementFromPoint(x,y)?.closest('[data-rule-card-id]') || null;
+}
+function endRuleChipDrag() {
+  if (ruleChipScrollFrame) cancelAnimationFrame(ruleChipScrollFrame);
+  ruleChipScrollFrame = 0;
+  ruleChipScrollVelocity = 0;
+  document.querySelectorAll('.is-rule-drop-target').forEach(node => node.classList.remove('is-rule-drop-target'));
+  ruleChipPointer?.ghost?.remove();
+  ruleChipPointer = null;
+}
+function beginRuleChipScroll() {
+  if (ruleChipScrollFrame) return;
+  const move = () => {
+    if (!ruleChipPointer?.moved || !ruleChipScrollVelocity) {
+      ruleChipScrollFrame = 0; return;
+    }
+    window.scrollBy(0, ruleChipScrollVelocity);
+    const hit = ruleDropTargetAt(ruleChipPointer.x,ruleChipPointer.y);
+    document.querySelectorAll('.is-rule-drop-target').forEach(node => node.classList.remove('is-rule-drop-target'));
+    hit?.classList.add('is-rule-drop-target');
+    ruleChipScrollFrame = requestAnimationFrame(move);
+  };
+  ruleChipScrollFrame = requestAnimationFrame(move);
+}
+function installRuleChipDrag(bar) {
+  bar.addEventListener('pointerdown', event => {
+    const chip = event.target.closest('[data-rule-category-chip]');
+    if (!chip || event.button !== 0) return;
+    ruleChipPointer = { pointerId: event.pointerId, categoryId: chip.dataset.ruleCategoryChip, x0:event.clientX, y0:event.clientY, x:event.clientX, y:event.clientY, moved:false, ghost:null };
+    chip.setPointerCapture(event.pointerId);
+  });
+  bar.addEventListener('pointermove', event => {
+    const drag = ruleChipPointer;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag.x = event.clientX; drag.y = event.clientY;
+    if (!drag.moved && Math.hypot(drag.x-drag.x0,drag.y-drag.y0) < 9) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      const chip = bar.querySelector('[data-rule-category-chip="'+CSS.escape(String(drag.categoryId))+'"]');
+      drag.ghost = document.createElement('div');
+      drag.ghost.className = 'rule-category-drag-ghost';
+      drag.ghost.textContent = chip?.textContent || 'Category';
+      document.body.append(drag.ghost);
+      armedRuleCategoryId = null;
+    }
+    event.preventDefault();
+    drag.ghost.style.left = drag.x + 'px';
+    drag.ghost.style.top = drag.y + 'px';
+    const target = ruleDropTargetAt(drag.x,drag.y);
+    document.querySelectorAll('.is-rule-drop-target').forEach(node => node.classList.remove('is-rule-drop-target'));
+    target?.classList.add('is-rule-drop-target');
+    const edge=85;
+    ruleChipScrollVelocity = drag.y > innerHeight-edge ? 13 : drag.y < edge ? -13 : 0;
+    if (ruleChipScrollVelocity) beginRuleChipScroll();
+  });
+  bar.addEventListener('pointerup', event => {
+    const drag = ruleChipPointer;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const moved = drag.moved;
+    const categoryId = drag.categoryId;
+    const target = moved ? ruleDropTargetAt(event.clientX,event.clientY) : null;
+    endRuleChipDrag();
+    if (moved) {
+      ruleChipSuppressClick = true;
+      setTimeout(() => { ruleChipSuppressClick = false; }, 80);
+      if (target) setRuleCategory(target.dataset.ruleCardId,categoryId,true)
+        .catch(error => toast(error.message || 'Could not save category.','error'));
+      else toast('Drop the category onto a rule card.', 'error');
+    }
+  });
+  bar.addEventListener('pointercancel',endRuleChipDrag);
+  bar.addEventListener('dragstart',event => {
+    const chip=event.target.closest('[data-rule-category-chip]');
+    if (!chip) return;
+    event.dataTransfer.setData('text/plain',chip.dataset.ruleCategoryChip);
+    event.dataTransfer.effectAllowed='copy';
+  });
+  els.rulesList.addEventListener('dragover',event => {
+    const target=event.target.closest('[data-rule-card-id]');
+    if (target) { event.preventDefault();event.dataTransfer.dropEffect='copy';target.classList.add('is-rule-drop-target'); }
+  });
+  els.rulesList.addEventListener('dragleave',event => event.target.closest('[data-rule-card-id]')?.classList.remove('is-rule-drop-target'));
+  els.rulesList.addEventListener('drop',event => {
+    const target=event.target.closest('[data-rule-card-id]');
+    if (!target) return;
+    event.preventDefault();
+    endRuleChipDrag();
+    const id=event.dataTransfer.getData('text/plain');
+    if (id) setRuleCategory(target.dataset.ruleCardId,id,true)
+      .catch(error => toast(error.message || 'Could not save category.','error'));
+  });
+}
+function renderQuickRuleToolbar() {
+  if (!els.rulesList) return;
+  let bar=$('#quick-rule-toolbar');
+  if (!bar) {
+    bar=document.createElement('div');
+    bar.id='quick-rule-toolbar';
+    bar.className='quick-rule-toolbar';
+    bar.setAttribute('aria-label','Drag a category onto a rule or tap category then rule');
+    els.rulesList.before(bar);
+    installRuleChipDrag(bar);
+    bar.addEventListener('click',event => {
+      if (ruleChipSuppressClick) {event.preventDefault();return;}
+      const chip=event.target.closest('[data-rule-category-chip]');
+      if (chip) {
+        const id=chip.dataset.ruleCategoryChip;
+        armedRuleCategoryId=armedRuleCategoryId===id?null:id;
+        renderQuickRuleToolbar();
+        return;
+      }
+      if (event.target.closest('[data-quick-rule-edit]') && state.activeQuickRuleId) openRuleEditor(state.activeQuickRuleId);
+    });
+  }
+  bar.replaceChildren();
+  const heading=document.createElement('div');
+  heading.className='quick-rule-toolbar-heading';
+  const title=document.createElement('strong');
+  title.textContent=armedRuleCategoryId?'Tap a rule below to apply category':
+    state.activeQuickRuleId ? 'Selected rule: ' + (state.ruleEntries.find(e=>String(e.id)===String(state.activeQuickRuleId))?.reference_text || '') :
+    'Drag a category onto any rule, or tap category then rule';
+  const edit=document.createElement('button');
+  edit.type='button';edit.className='secondary-button compact-button';
+  edit.dataset.quickRuleEdit='1';edit.textContent='Edit note / categories';
+  edit.disabled=!state.activeQuickRuleId;
+  heading.append(title,edit);
+  bar.append(heading);
+  const choices=document.createElement('div');choices.className='quick-rule-category-choices';
+  state.ruleColumns.forEach(column=>{
+    const chip=document.createElement('button');
+    chip.type='button';
+    chip.className='rule-category-drag-chip';
+    chip.dataset.ruleCategoryChip=String(column.id);
+    chip.textContent=column.name;
+    chip.draggable=true;
+    chip.classList.toggle('is-armed',armedRuleCategoryId===String(column.id));
+    if(state.activeQuickRuleId) chip.classList.toggle('is-applied',ruleCategoryIds(state.activeQuickRuleId).has(String(column.id)));
+    choices.append(chip);
+  });
+  if (!state.ruleColumns.length) choices.textContent='Add rule categories using Manage rule categories.';
   bar.append(choices);
-  const footer = document.createElement('div');
-  footer.className = 'quick-rule-toolbar-footer';
-  const count = document.createElement('small');
-  count.textContent = `${state.quickRuleDrafts.size} unsaved rule${state.quickRuleDrafts.size === 1 ? '' : 's'}`;
-  const save = document.createElement('button');
-  save.type = 'button'; save.className = 'primary-button';
-  save.dataset.quickRuleSave = '1'; save.textContent = 'Save all';
-  save.disabled = !state.quickRuleDrafts.size || state.quickRuleSaving;
-  footer.append(count, save);
+  const footer=document.createElement('small');
+  footer.className='quick-rule-help';
+  footer.textContent='Assignments save immediately. Tap an applied category to remove it from the selected rule.';
   bar.append(footer);
 }
 function updateQuickRuleCard(id) {
-  const card = [...els.rulesList.querySelectorAll('[data-rule-card-id]')]
-    .find(item => item.dataset.ruleCardId === String(id));
+  const card=[...els.rulesList.querySelectorAll('[data-rule-card-id]')].find(item=>item.dataset.ruleCardId===String(id));
   if (!card) return;
-  const area = card.querySelector('.rule-card-categories');
-  if (!area) return;
+  const area=card.querySelector('.rule-card-categories');if(!area)return;
   area.replaceChildren();
-  const ids = quickRuleCategories(id);
-  state.ruleColumns.filter(column => ids.has(String(column.id))).forEach(column => {
-    const chip = document.createElement('span');
-    chip.textContent = column.name;
-    area.append(chip);
+  const ids=ruleCategoryIds(id);
+  state.ruleColumns.filter(column=>ids.has(String(column.id))).forEach(column=>{
+    const chip=document.createElement('span');chip.textContent=column.name;area.append(chip);
   });
-  card.classList.toggle('has-unsaved-categories', state.quickRuleDrafts.has(String(id)));
+  card.classList.remove('has-unsaved-categories');
 }
 function selectQuickRule(id) {
-  state.activeQuickRuleId = String(id);
-  els.rulesList.querySelectorAll('[data-rule-card-id]').forEach(card => {
-    card.classList.toggle('is-quick-selected', card.dataset.ruleCardId === String(id));
-  });
+  state.activeQuickRuleId=String(id);
+  els.rulesList.querySelectorAll('[data-rule-card-id]').forEach(card=>
+    card.classList.toggle('is-quick-selected',card.dataset.ruleCardId===String(id)));
   renderQuickRuleToolbar();
 }
 function renderRules() {
@@ -2107,37 +2182,20 @@ function openRuleEditor(ruleId) {
 }
 
 async function saveRuleEditor() {
-  const entry = state.ruleEntries.find((item) => String(item.id) === String(state.activeRuleEditorId));
-  if (!entry) return;
-  const wanted = new Set($('[data-rule-editor-category]:checked').map((input) => String(input.value)));
-  const current = ruleCategoryIds(entry.id);
-  const toAdd = [...wanted].filter((id) => !current.has(id));
-  const toRemove = [...current].filter((id) => !wanted.has(id));
-  const note = els.ruleNote.value.trim();
-  if (state.mode === 'supabase') {
-    const update = await state.supabase.from('rule_entries').update({ note, updated_at: new Date().toISOString() }).eq('id', entry.id).select().single();
-    if (update.error) throw update.error;
-    Object.assign(entry, update.data);
-    if (toAdd.length) {
-      const add = await state.supabase.from('rule_category_assignments').insert(toAdd.map((columnId) => ({
-        rule_id: entry.id, category_id: columnId, user_id: state.userId,
-      })));
-      if (add.error) throw add.error;
-    }
-    for (const columnId of toRemove) {
-      const remove = await state.supabase.from('rule_category_assignments').delete().eq('rule_id', entry.id).eq('category_id', columnId);
-      if (remove.error) throw remove.error;
-    }
-  } else {
-    entry.note = note;
-    entry.updated_at = new Date().toISOString();
+  const entry=state.ruleEntries.find(item=>String(item.id)===String(state.activeRuleEditorId));
+  if(!entry) return;
+  const selected=new Set($('[data-rule-editor-category]:checked').map(input=>String(input.value)));
+  await persistRuleCategories(entry.id,selected);
+  const note=els.ruleNote.value.trim();
+  if(state.mode==='supabase'){
+    const update=await state.supabase.from('rule_entries').update({note,updated_at:new Date().toISOString()})
+      .eq('id',entry.id).select().single();
+    if(update.error)throw update.error;
+    Object.assign(entry,update.data);
+  }else {
+    entry.note=note;entry.updated_at=new Date().toISOString();saveLocal();
   }
-  toAdd.forEach((columnId) => state.ruleCategoryCells.add(`${entry.id}:${columnId}`));
-  toRemove.forEach((columnId) => state.ruleCategoryCells.delete(`${entry.id}:${columnId}`));
-  state.quickRuleDrafts.delete(String(entry.id));
-  if (state.mode === 'local') saveLocal();
-  renderRules();
-  renderMatrix();
+  renderRules();renderMatrix();
 }
 
 async function deleteRuleEntry(ruleId) {
@@ -2740,7 +2798,30 @@ function bindEvents() {
       return;
     }
     const card = event.target.closest('[data-rule-card-id]');
-    if (card && !event.target.closest('button, label, input')) selectQuickRule(card.dataset.ruleCardId);
+    if (card && !event.target.closest('button, label, input')) {
+      const ruleId=card.dataset.ruleCardId;
+      if(armedRuleCategoryId) {
+        const cid=armedRuleCategoryId;
+        armedRuleCategoryId=null;
+        setRuleCategory(ruleId,cid,true)
+          .then(()=>selectQuickRule(ruleId))
+          .catch(error=>toast(error.message||'Could not save category.','error'));
+      } else selectQuickRule(ruleId);
+    }
+  });
+  // Changing a checkbox inside the Rule Journal saves the category immediately.
+  els.ruleEditorCategories.addEventListener('change', async event => {
+    const input=event.target.closest('[data-rule-editor-category]');
+    if(!input || !state.activeRuleEditorId)return;
+    input.disabled=true;
+    const id=state.activeRuleEditorId;
+    try {
+      await setRuleCategory(id,input.value,input.checked);
+      renderRules();
+    }catch(error){
+      input.checked=!input.checked;
+      toast(error.message||'Could not save category.','error');
+    }finally{input.disabled=false;}
   });
   els.ruleEditorForm.addEventListener('submit', async (event) => {
     event.preventDefault();
