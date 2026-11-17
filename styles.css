@@ -586,3 +586,40 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   color: #982a2a;
 }
 .matrix-section-actions .matrix-review-button:disabled { opacity: .5; cursor: wait; }
+
+/* Quick rule categorization: pinned controls while moving through journal entries. */
+#quick-rule-toolbar {
+  position: sticky;
+  top: 74px;
+  z-index: 16;
+  background: #fffdf8;
+  border: 1px solid #d8cfc0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 14px rgba(54, 43, 32, .12);
+  margin: 12px 0;
+}
+.quick-rule-toolbar-heading,
+.quick-rule-toolbar-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.quick-rule-toolbar-heading strong { font-size: 12px; line-height: 1.35; }
+.quick-rule-toolbar-heading button { flex: 0 0 auto; }
+.quick-rule-category-choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0; max-height: 120px; overflow-y: auto; }
+.quick-rule-category-choices label {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 9px; min-height: 36px;
+  background: #f8f5ef; border: 1px solid #ded5c8; border-radius: 8px;
+  font-weight: 700; font-size: 12px; cursor: pointer;
+}
+.quick-rule-category-choices label:has(input:checked) { background: #e2f1e0; border-color: #619c64; }
+.quick-rule-category-choices input { accent-color: #347947; width: 17px; height: 17px; }
+.quick-rule-toolbar-footer small { font-size: 11px; color: #786d60; }
+.quick-rule-toolbar-footer button { min-height: 38px; padding: 7px 15px; }
+.rule-card.is-quick-selected { outline: 3px solid #769c77; outline-offset: 1px; background: #fbfff9; }
+.rule-card.has-unsaved-categories .rule-card-categories::after { content: "Unsaved"; font-size: 10px; color: #8e5f1a; font-weight: 700; }
+@media (max-width: 600px) {
+  #quick-rule-toolbar { top: 65px; padding: 9px; }
+  .quick-rule-toolbar-heading { align-items: flex-start; }
+  .quick-rule-toolbar-heading strong { font-size: 11px; }
+  .quick-rule-toolbar-heading button { min-height: 34px; }
+  .quick-rule-category-choices { max-height: 100px; }
+}
