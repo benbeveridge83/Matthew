@@ -623,3 +623,63 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   .quick-rule-toolbar-heading button { min-height: 34px; }
   .quick-rule-category-choices { max-height: 100px; }
 }
+
+/* Sticky category chips support Android touch drag/drop onto rule cards. */
+#quick-rule-toolbar {
+  position: sticky;
+  top: 66px;
+  z-index: 30;
+  background: #fffdf8;
+  border: 1px solid #d9c9b4;
+  box-shadow: 0 3px 14px rgba(53,42,27,.16);
+}
+#quick-rule-toolbar .quick-rule-category-choices {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  padding: 3px 0 7px;
+  -webkit-overflow-scrolling: touch;
+}
+#quick-rule-toolbar .rule-category-drag-chip {
+  border: 1px solid #c7ae91;
+  background: #f6eee4;
+  color: #503f2d;
+  border-radius: 9px;
+  padding: 8px 13px;
+  min-height: 40px;
+  min-width: 74px;
+  font-weight: 750;
+  cursor: grab;
+  flex: 0 0 auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#quick-rule-toolbar .rule-category-drag-chip.is-applied {
+  background: #e1f1df;
+  border-color: #6d9d6c;
+}
+#quick-rule-toolbar .rule-category-drag-chip.is-armed {
+  background: #d4e8f3;
+  border-color: #418ab9;
+  outline: 2px solid #418ab9;
+}
+.rule-category-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%,-115%);
+  border: 2px solid #6b8b5b;
+  background: #e7f5e0;
+  box-shadow: 0 5px 14px rgba(0,0,0,.25);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: bold;
+}
+.rule-card.is-rule-drop-target {
+  outline: 3px solid #568e55;
+  outline-offset: 2px;
+  background: #eef9eb;
+}
+.quick-rule-help {display:block; color:#716a5e; font-size:11px; line-height:1.4; }
