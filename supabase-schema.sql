@@ -93,3 +93,13 @@ create policy "Users delete own matrix cells" on public.group_category_cells for
 revoke all on public.verse_groups, public.category_columns, public.group_category_cells from anon;
 grant select, insert, update, delete on public.verse_groups, public.category_columns, public.group_category_cells to authenticated;
 grant usage, select on sequence public.verse_groups_id_seq, public.category_columns_id_seq to authenticated;
+
+-- Independent review decisions for Category Matrix and Rules Matrix.
+-- 'complete' marks a reviewed section green, 'none' marks it red,
+-- and 'unreviewed' clears the explicit review status.
+alter table public.verse_groups
+  add column if not exists category_review_status text not null default 'unreviewed'
+    check (category_review_status in ('unreviewed', 'complete', 'none'));
+alter table public.verse_groups
+  add column if not exists rule_review_status text not null default 'unreviewed'
+    check (rule_review_status in ('unreviewed', 'complete', 'none'));
