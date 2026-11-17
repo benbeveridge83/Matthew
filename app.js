@@ -1988,8 +1988,15 @@ function renderQuickRuleToolbar() {
       const chip=event.target.closest('[data-rule-category-chip]');
       if (chip) {
         const id=chip.dataset.ruleCategoryChip;
-        armedRuleCategoryId=armedRuleCategoryId===id?null:id;
-        renderQuickRuleToolbar();
+        if (state.activeQuickRuleId) {
+          const ruleId=state.activeQuickRuleId;
+          const currentlyApplied=ruleCategoryIds(ruleId).has(String(id));
+          setRuleCategory(ruleId,id,!currentlyApplied).catch(error=>
+            toast(error.message||'Could not save category.','error'));
+        } else {
+          armedRuleCategoryId=armedRuleCategoryId===id?null:id;
+          renderQuickRuleToolbar();
+        }
         return;
       }
       if (event.target.closest('[data-quick-rule-edit]') && state.activeQuickRuleId) openRuleEditor(state.activeQuickRuleId);
