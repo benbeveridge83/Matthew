@@ -853,9 +853,11 @@ function makeMatrixRow(group, { subgroup = false, verdictMap = sentenceVerdictMa
     if (verdict === 'rule' || verdict === 'not_rule' || verdict === 'unsure') counts[verdict] += 1;
     else counts.nc += 1;
   });
-  const complete = total > 0 && counts.nc === 0;
-  const categoryComplete = state.columns.some(column => aggregateCategoryState(group.id, column.id) === 'all');
-  if (complete && (state.matrixMode === 'rules' || categoryComplete)) row.classList.add('is-complete');
+  // Review status is explicit and independent for the two matrix modes.
+  const reviewField = state.matrixMode === 'rules' ? 'rule_review_status' : 'category_review_status';
+  const reviewStatus = group[reviewField] || 'unreviewed';
+  row.classList.toggle('is-review-complete', reviewStatus === 'complete');
+  row.classList.toggle('is-review-none', reviewStatus === 'none');
   if (!state.expanded.has(String(group.id))) row.classList.add('is-collapsed');
   const passageCell = document.createElement('td');
   const summary = document.createElement('div');
@@ -953,6 +955,21 @@ function makeMatrixRow(group, { subgroup = false, verdictMap = sentenceVerdictMa
   if (state.expanded.has(String(group.id))) {
     const inlineActions = document.createElement('div');
     inlineActions.className = 'matrix-section-actions';
+    const markComplete = document.createElement('button');
+    markComplete.type = 'button';
+    markComplete.className = 'matrix-review-button matrix-review-complete';
+    markComplete.dataset.matrixReviewGroup = group.id;
+    markComplete.dataset.matrixReviewStatus = 'complete';
+    markComplete.textContent = '✓ Complete';
+    markComplete.setAttribute('aria-pressed', String(reviewStatus === 'complete'));
+    const markNone = document.createElement('button');
+    markNone.type = 'button';
+    markNone.className = 'matrix-review-button matrix-review-none';
+    markNone.dataset.matrixReviewGroup = group.id;
+    markNone.dataset.matrixReviewStatus = 'none';
+    markNone.textContent = state.matrixMode === 'rules' ? '✕ No Rules' : '✕ No Categories';
+    markNone.setAttribute('aria-pressed', String(reviewStatus === 'none'));
+    inlineActions.append(markComplete, markNone);
     const categorize = document.createElement('button');
     categorize.type = 'button'; categorize.className = 'secondary-button compact-button';
     categorize.dataset.openCategoriesFor = group.id; categorize.textContent = 'Categorize section';
@@ -2302,6 +2319,30 @@ function bindEvents() {
     } catch (error) { toast(error.message || 'Could not save the column.', 'error'); }
   });
   els.matrixBody.addEventListener('click', async (event) => {
+    const reviewButton = event.target.closest('[data-matrix-review-status]');
+    if (reviewButton) {
+      event.preventDefault(); event.stopPropagation();
+      const id = String(reviewButton.dataset.matrixReviewGroup);
+      const group = state.groups.find(item => String(item.id) === id);
+      if (!group) return;
+      const field = state.matrixMode === 'rules' ? 'rule_review_status' : 'category_review_status';
+      const chosen = reviewButton.dataset.matrixReviewStatus;
+      const status = group[field] === chosen ? 'unreviewed' : chosen;
+      reviewButton.disabled = true;
+      try {
+        if (state.mode === 'supabase') {
+          const result = await state.supabase.from('verse_groups').update({ [field]: status }).eq('id', id).select('id').single();
+          if (result.error) throw result.error;
+        }
+        group[field] = status;
+        if (state.mode !== 'supabase') saveLocal();
+        renderMatrix();
+      } catch (error) {
+        reviewButton.disabled = false;
+        toast(error.message || 'Could not save review status.', 'error');
+      }
+      return;
+    }
     const categoryAction = event.target.closest('[data-open-categories-for]');
     if (categoryAction) { event.stopPropagation(); openCategoryDialog(categoryAction.dataset.openCategoriesFor); return; }
     const subgroupAction = event.target.closest('[data-open-subgroups-for]');
