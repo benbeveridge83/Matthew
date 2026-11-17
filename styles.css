@@ -557,3 +557,32 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
     padding-left: 10px;
   }
 }
+
+/* Explicit independent section-review status for both matrix modes. */
+.matrix-table tr.is-review-complete > td,
+.matrix-table tr.is-review-complete .passage-summary { background: #e2f2dd !important; }
+.matrix-table tr.is-review-none > td,
+.matrix-table tr.is-review-none .passage-summary { background: #fbe2e2 !important; }
+.matrix-table tr.is-review-complete .passage-summary:hover { background: #d5ebce !important; }
+.matrix-table tr.is-review-none .passage-summary:hover { background: #f5d3d3 !important; }
+.matrix-section-actions .matrix-review-button {
+  min-height: 38px;
+  border: 1px solid #aab4bb;
+  border-radius: 9px;
+  background: #fff;
+  color: #26303b;
+  padding: 7px 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.matrix-section-actions .matrix-review-complete[aria-pressed="true"] {
+  background: #d5edcf;
+  border-color: #5d9a69;
+  color: #1f642e;
+}
+.matrix-section-actions .matrix-review-none[aria-pressed="true"] {
+  background: #f8d7d7;
+  border-color: #c96d6d;
+  color: #982a2a;
+}
+.matrix-section-actions .matrix-review-button:disabled { opacity: .5; cursor: wait; }
