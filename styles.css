@@ -683,3 +683,28 @@ select, input { border: 1px solid var(--line); border-radius: 9px; background: v
   background: #eef9eb;
 }
 .quick-rule-help {display:block; color:#716a5e; font-size:11px; line-height:1.4; }
+
+/* Mobile accessibility: show every rule category without horizontal scrolling. */
+@media (max-width: 700px) {
+  #quick-rule-toolbar .quick-rule-category-choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    overflow: visible;
+    max-height: none;
+    width: 100%;
+    padding: 2px 0;
+    flex-wrap: wrap;
+  }
+  #quick-rule-toolbar .rule-category-drag-chip {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 42px;
+    padding: 8px 9px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+    text-align: center;
+  }
+}
